@@ -6,7 +6,7 @@ import {
   scoreBoardFeatures,
 } from "./features.js";
 
-export const SEARCH_OBJECTIVE = "chain_builder_v2";
+export const SEARCH_OBJECTIVE = "chain_builder_v3";
 
 function clampDepth(depth) {
   return Math.max(1, Math.min(4, Number.parseInt(depth, 10) || 1));
@@ -30,22 +30,40 @@ function cloneAction(action) {
   };
 }
 
+function rememberCandidateNode(candidatePools, node, maxPerRoot = 3) {
+  const nodes = candidatePools.get(node.rootKey) ?? [];
+  nodes.push(node);
+  nodes.sort((left, right) => right.searchScore - left.searchScore);
+  if (nodes.length > maxPerRoot) {
+    nodes.length = maxPerRoot;
+  }
+  candidatePools.set(node.rootKey, nodes);
+}
+
 function scoreTurnResult(result) {
   if (result.topout) {
-    return -2_000_000;
+    return -5_000_000;
   }
 
-  const chainBonus =
-    result.totalChains <= 1 ? 0 : 340 * 2 ** (result.totalChains - 2);
-  const allClearBonus = result.allClear ? 800 : 0;
-  const singleChainPenalty =
-    result.totalChains === 1 && result.totalScore <= 200 ? 90 : 0;
-  return result.totalScore * 2 + chainBonus + allClearBonus - singleChainPenalty;
+  if (result.totalChains === 0) {
+    return 0;
+  }
+
+  if (result.totalChains === 1) {
+    return -240 + result.totalScore * 0.15;
+  }
+
+  const chainValue = 1_100 * result.totalChains ** 3;
+  const scoreValue = result.totalScore * 0.7;
+  const allClearBonus = result.allClear ? 180 : 0;
+  return chainValue + scoreValue + allClearBonus;
 }
 
 function createExpandedNode(node, pair, action, layerIndex) {
   const result = resolveTurn(node.board, pair, action);
-  const features = extractBoardFeatures(result.finalBoard);
+  const features = extractBoardFeatures(result.finalBoard, {
+    includeVirtualChains: false,
+  });
   const heuristicScore = scoreBoardFeatures(features);
   const turnValue = scoreTurnResult(result);
   const cumulativeValue = node.cumulativeValue + turnValue;
@@ -76,39 +94,40 @@ function createExpandedNode(node, pair, action, layerIndex) {
   };
 }
 
-function upsertCandidate(bestByRoot, node) {
-  const previous = bestByRoot.get(node.rootKey);
-  if (previous && previous.searchScore >= node.searchScore) {
-    return;
-  }
+function createCandidate(node) {
+  const refinedFeatures = extractBoardFeatures(node.board, {
+    includeVirtualChains: true,
+  });
+  const heuristicScore = scoreBoardFeatures(refinedFeatures);
+  const searchScore = node.cumulativeValue + heuristicScore;
 
-  bestByRoot.set(node.rootKey, {
+  return {
     action: cloneAction(node.rootAction),
     actionKey: node.rootKey,
-    searchScore: node.searchScore,
+    searchScore,
     cumulativeValue: node.cumulativeValue,
-    heuristicScore: node.heuristicScore,
+    heuristicScore,
     immediateScore: node.rootTurn.score,
     immediateChains: node.rootTurn.chains,
     immediateTopout: node.rootTurn.topout,
     immediateAllClear: node.rootTurn.allClear,
     bestDepth: node.bestDepth,
     line: node.path.map((action) => cloneAction(action)),
-    leafFeatures: node.lastFeatures,
-    featureVector: featuresToVector(node.lastFeatures),
+    leafFeatures: refinedFeatures,
+    featureVector: featuresToVector(refinedFeatures),
     leafResult: {
       totalScore: node.lastResult.totalScore,
       totalChains: node.lastResult.totalChains,
       topout: node.lastResult.topout,
       allClear: node.lastResult.allClear,
     },
-  });
+  };
 }
 
 export function searchBestMove({ board, currentPair, nextQueue = [], settings = {} }) {
   const startedAt = performance.now();
   const normalizedSettings = normalizeSettings(settings);
-  const bestByRoot = new Map();
+  const candidatePools = new Map();
   const rootActions = enumerateLegalActions(board, currentPair);
 
   let expandedNodeCount = 0;
@@ -128,7 +147,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
       0,
     );
     expandedNodeCount += 1;
-    upsertCandidate(bestByRoot, node);
+    rememberCandidateNode(candidatePools, node);
     return node;
   });
 
@@ -148,7 +167,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
       for (const action of actions) {
         const child = createExpandedNode(node, pair, action, depthIndex);
         expandedNodeCount += 1;
-        upsertCandidate(bestByRoot, child);
+        rememberCandidateNode(candidatePools, child);
         expanded.push(child);
       }
     }
@@ -161,7 +180,13 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
     frontier = expanded.slice(0, normalizedSettings.beamWidth);
   }
 
-  const candidates = [...bestByRoot.values()].sort(
+  const candidates = [...candidatePools.values()]
+    .map((nodes) =>
+      nodes
+        .map((node) => createCandidate(node))
+        .sort((left, right) => right.searchScore - left.searchScore)[0],
+    )
+    .sort(
     (left, right) => right.searchScore - left.searchScore,
   );
   const bestAction = candidates[0]?.action ?? cloneAction(rootActions[0]);

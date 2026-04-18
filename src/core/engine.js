@@ -142,38 +142,7 @@ function applyGravity(board) {
   return changed;
 }
 
-export function resolveTurn(board, pair, action) {
-  const placement = applyPlacement(board, pair, action);
-  const workingBoard = placement.board;
-  const events = [
-    makeEvent(EVENT_TYPES.PLACE, workingBoard, {
-      action,
-      pair,
-      placedCells: placement.cells,
-    }),
-  ];
-
-  const topout = placement.cells.every((cell) => cell.y >= VISIBLE_HEIGHT);
-  if (topout) {
-    events.push(
-      makeEvent(EVENT_TYPES.SETTLE, workingBoard, {
-        topout: true,
-        chain: 0,
-        stepScore: 0,
-        totalScore: 0,
-      }),
-    );
-    return {
-      finalBoard: cloneBoard(workingBoard),
-      topout: true,
-      totalChains: 0,
-      totalScore: 0,
-      stepScores: [],
-      allClear: false,
-      events,
-    };
-  }
-
+function resolveBoardState(workingBoard, events = null) {
   let chain = 0;
   let totalScore = 0;
   const stepScores = [];
@@ -214,47 +183,97 @@ export function resolveTurn(board, pair, action) {
       }
     }
 
-    events.push(
-      makeEvent(EVENT_TYPES.CLEAR, workingBoard, {
-        chain,
-        stepScore,
-        totalScore,
-        erasedCount,
-        groups: matchedGroups.map((group) => ({
-          color: group.color,
-          size: group.cells.length,
-          cells: group.cells.map((cell) => ({ ...cell })),
-        })),
-      }),
-    );
+    if (events) {
+      events.push(
+        makeEvent(EVENT_TYPES.CLEAR, workingBoard, {
+          chain,
+          stepScore,
+          totalScore,
+          erasedCount,
+          groups: matchedGroups.map((group) => ({
+            color: group.color,
+            size: group.cells.length,
+            cells: group.cells.map((cell) => ({ ...cell })),
+          })),
+        }),
+      );
+    }
 
     applyGravity(workingBoard);
-    events.push(
-      makeEvent(EVENT_TYPES.GRAVITY, workingBoard, {
-        chain,
-        totalScore,
-      }),
-    );
+
+    if (events) {
+      events.push(
+        makeEvent(EVENT_TYPES.GRAVITY, workingBoard, {
+          chain,
+          totalScore,
+        }),
+      );
+    }
   }
 
-  const allClear = isBoardEmpty(workingBoard);
+  return {
+    finalBoard: cloneBoard(workingBoard),
+    totalChains: chain,
+    totalScore,
+    stepScores,
+    allClear: isBoardEmpty(workingBoard),
+  };
+}
+
+export function resolveBoard(board) {
+  const workingBoard = cloneBoard(board);
+  return resolveBoardState(workingBoard);
+}
+
+export function resolveTurn(board, pair, action) {
+  const placement = applyPlacement(board, pair, action);
+  const workingBoard = placement.board;
+  const events = [
+    makeEvent(EVENT_TYPES.PLACE, workingBoard, {
+      action,
+      pair,
+      placedCells: placement.cells,
+    }),
+  ];
+
+  const topout = placement.cells.every((cell) => cell.y >= VISIBLE_HEIGHT);
+  if (topout) {
+    events.push(
+      makeEvent(EVENT_TYPES.SETTLE, workingBoard, {
+        topout: true,
+        chain: 0,
+        stepScore: 0,
+        totalScore: 0,
+      }),
+    );
+    return {
+      finalBoard: cloneBoard(workingBoard),
+      topout: true,
+      totalChains: 0,
+      totalScore: 0,
+      stepScores: [],
+      allClear: false,
+      events,
+    };
+  }
+  const resolved = resolveBoardState(workingBoard, events);
   events.push(
     makeEvent(EVENT_TYPES.SETTLE, workingBoard, {
       topout: false,
-      chain,
-      totalScore,
-      stepScore: stepScores.at(-1) ?? 0,
-      allClear,
+      chain: resolved.totalChains,
+      totalScore: resolved.totalScore,
+      stepScore: resolved.stepScores.at(-1) ?? 0,
+      allClear: resolved.allClear,
     }),
   );
 
   return {
-    finalBoard: cloneBoard(workingBoard),
+    finalBoard: resolved.finalBoard,
     topout: false,
-    totalChains: chain,
-    totalScore,
-    stepScores,
-    allClear,
+    totalChains: resolved.totalChains,
+    totalScore: resolved.totalScore,
+    stepScores: resolved.stepScores,
+    allClear: resolved.allClear,
     events,
   };
 }

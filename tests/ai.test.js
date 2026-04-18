@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createAiSnapshot, createPolicyTrainingSample } from "../src/ai/dataset.js";
+import { extractBoardFeatures } from "../src/ai/features.js";
 import { searchBestMove } from "../src/ai/search.js";
 import { boardFromRows } from "../src/core/board.js";
 import { COLORS } from "../src/core/constants.js";
@@ -114,9 +115,32 @@ test("search analysis can be serialized into a training sample", () => {
   });
   const sample = createPolicyTrainingSample(snapshot, analysis);
 
-  assert.equal(sample.search.objective, "chain_builder_v2");
+  assert.equal(sample.search.objective, "chain_builder_v3");
   assert.equal(sample.bestActionKey, analysis.bestActionKey);
   assert.equal(sample.candidates.length, analysis.candidates.length);
   assert.equal(sample.state.turn, 4);
   assert.equal(sample.search.settings.depth, 2);
+});
+
+test("feature extraction sees the virtual double-chain trigger on the demo board", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+
+  const features = extractBoardFeatures(board);
+
+  assert.equal(features.bestVirtualChain, 2);
+  assert.ok(features.bestVirtualScore >= 360);
+  assert.ok(features.virtualChainCount2Plus >= 1);
 });
