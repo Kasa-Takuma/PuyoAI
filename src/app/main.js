@@ -1,5 +1,5 @@
 import { createDatasetFilename, serializeAiDataset } from "../ai/dataset.js";
-import { analyzeLearnedMove } from "../ai/learned.js";
+import { analyzeLearnedMove, loadLearnedModelManifest } from "../ai/learned.js";
 import { searchBestMove } from "../ai/search.js";
 import { renderApp } from "./render.js";
 import {
@@ -15,8 +15,10 @@ import {
   recordAiAnalysis,
   resetReplayToLatest,
   setAiMode,
+  setLearnedModels,
   setAiError,
   setAiSetting,
+  setSelectedLearnedModelId,
   setAiStatus,
   setSelectedAction,
   startReplay,
@@ -29,6 +31,7 @@ let state = createGameState();
 let aiWorker = null;
 let nextAiRequestId = 1;
 const pendingAiRequests = new Map();
+let autoRestartTimer = null;
 
 function rerender() {
   renderApp(root, state);
@@ -40,18 +43,56 @@ function retainedGameOptions() {
     existingAiDataset: state.aiDataset,
     aiSettings: state.aiSettings,
     aiMode: state.aiMode,
+    learnedModels: state.learnedModels,
+    selectedLearnedModelId: state.selectedLearnedModelId,
   };
 }
 
-function rebuildStateFromControls() {
+function clearAutoRestartTimer() {
+  if (autoRestartTimer !== null) {
+    window.clearTimeout(autoRestartTimer);
+    autoRestartTimer = null;
+  }
+}
+
+function rebuildStateFromControls({ nextSeed = false } = {}) {
   const presetSelect = document.querySelector("#preset-select");
   const seedInput = document.querySelector("#seed-input");
+  const seedBase = seedInput?.value ?? state.seedBase ?? state.seed;
   stopReplay(state);
+  clearAutoRestartTimer();
   state = createGameState({
     presetId: presetSelect?.value ?? state.presetId,
-    seed: seedInput?.value ?? state.seed,
+    seed: seedBase,
+    seedOffset: nextSeed ? state.seedOffset + 1 : 0,
     ...retainedGameOptions(),
   });
+}
+
+function scheduleAutoRestart() {
+  if (!state.gameOver) {
+    return;
+  }
+
+  const shouldResumeContinuous = state.aiContinuous;
+  const remainingAutoTurns = state.aiAutoRunRemaining;
+
+  clearAutoRestartTimer();
+  setAiStatus(state, "restarting", false);
+  rerender();
+
+  autoRestartTimer = window.setTimeout(() => {
+    autoRestartTimer = null;
+    rebuildStateFromControls({ nextSeed: true });
+    state.aiContinuous = shouldResumeContinuous;
+    state.aiAutoRunRemaining = remainingAutoTurns;
+    setAiStatus(state, "idle", false);
+    rerender();
+
+    if (state.aiContinuous || state.aiAutoRunRemaining > 0) {
+      window.setTimeout(runNextAiAutoTurn, 80);
+    }
+  }, 1000);
 }
 
 function downloadTextFile(filename, content, mimeType = "application/json") {
@@ -93,9 +134,14 @@ function finalizeAiAnalysis(requestId, analysis) {
       return;
     }
 
+    if (state.gameOver) {
+      scheduleAutoRestart();
+      return;
+    }
+
     state.aiContinuous = false;
     state.aiAutoRunRemaining = 0;
-    setAiStatus(state, state.gameOver ? "stopped" : "complete", false);
+    setAiStatus(state, "complete", false);
     rerender();
   }
 }
@@ -184,6 +230,8 @@ function runNextAiAutoTurn() {
 }
 
 function stopAiLoop() {
+  clearAutoRestartTimer();
+
   if (
     !state.aiContinuous &&
     state.aiAutoRunRemaining <= 0 &&
@@ -277,8 +325,19 @@ function bindEvents() {
     rerender();
   });
 
+  document.querySelector("#learned-model")?.addEventListener("change", (event) => {
+    stopAiLoop();
+    setSelectedLearnedModelId(state, event.target.value);
+    rerender();
+  });
+
   document.querySelector("#ai-beam")?.addEventListener("change", (event) => {
     setAiSetting(state, "beamWidth", event.target.value);
+    rerender();
+  });
+
+  document.querySelector("#ai-search-profile")?.addEventListener("change", (event) => {
+    setAiSetting(state, "searchProfile", event.target.value);
     rerender();
   });
 
@@ -370,6 +429,17 @@ async function registerServiceWorker() {
   }
 }
 
+async function initializeLearnedModels() {
+  try {
+    const manifest = await loadLearnedModelManifest();
+    setLearnedModels(state, manifest.models, manifest.defaultModelId);
+    rerender();
+  } catch (error) {
+    console.warn("Failed to load learned model manifest.", error);
+  }
+}
+
 initializeAiWorker();
+initializeLearnedModels();
 registerServiceWorker();
 rerender();

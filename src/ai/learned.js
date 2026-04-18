@@ -5,10 +5,22 @@ import { PLAYABLE_COLORS } from "../core/constants.js";
 const BOARD_HEIGHT = 14;
 const BOARD_WIDTH = 6;
 const BOARD_SYMBOLS = [".", "R", "G", "B", "Y"];
-const MODEL_URL = new URL("../../models/policy_mlp.web.json", import.meta.url);
+const MANIFEST_URL = new URL("../../models/manifest.json", import.meta.url);
 const DEFAULT_SETTINGS = Object.freeze({
   depth: 3,
   beamWidth: 24,
+});
+const FALLBACK_MANIFEST = Object.freeze({
+  format: "puyoai-model-manifest-v1",
+  defaultModelId: "policy_mlp_default",
+  models: [
+    {
+      id: "policy_mlp_default",
+      label: "Policy MLP Default",
+      path: "./policy_mlp.web.json",
+      description: "Fallback manifest entry for the current exported learned model.",
+    },
+  ],
 });
 
 const BOARD_SYMBOL_INDEX = Object.freeze(
@@ -18,7 +30,8 @@ const PLAYABLE_COLOR_INDEX = Object.freeze(
   Object.fromEntries(PLAYABLE_COLORS.map((symbol, index) => [symbol, index])),
 );
 
-let learnedPolicyPromise = null;
+let manifestPromise = null;
+const modelPromiseCache = new Map();
 
 function gelu(value) {
   const cubic = value * value * value;
@@ -36,6 +49,35 @@ function normalizeSettings(settings = {}) {
       4,
       Math.min(96, Number.parseInt(settings.beamWidth, 10) || DEFAULT_SETTINGS.beamWidth),
     ),
+  };
+}
+
+function normalizeManifest(manifest) {
+  if (!manifest || !Array.isArray(manifest.models) || manifest.models.length === 0) {
+    return FALLBACK_MANIFEST;
+  }
+
+  const models = manifest.models
+    .filter((model) => model && typeof model.id === "string" && typeof model.path === "string")
+    .map((model) => ({
+      id: model.id,
+      label: model.label ?? model.id,
+      path: model.path,
+      description: model.description ?? "",
+    }));
+
+  if (models.length === 0) {
+    return FALLBACK_MANIFEST;
+  }
+
+  const defaultModelId = models.some((model) => model.id === manifest.defaultModelId)
+    ? manifest.defaultModelId
+    : models[0].id;
+
+  return {
+    format: manifest.format ?? FALLBACK_MANIFEST.format,
+    defaultModelId,
+    models,
   };
 }
 
@@ -140,19 +182,57 @@ function hydrateModel(model) {
   };
 }
 
-export async function loadLearnedPolicyModel() {
-  if (!learnedPolicyPromise) {
-    learnedPolicyPromise = fetch(MODEL_URL)
+export async function loadLearnedModelManifest() {
+  if (!manifestPromise) {
+    manifestPromise = fetch(MANIFEST_URL)
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`Failed to load learned policy model: ${response.status}`);
+          return FALLBACK_MANIFEST;
         }
         return response.json();
       })
-      .then((model) => hydrateModel(model));
+      .catch(() => FALLBACK_MANIFEST)
+      .then((manifest) => normalizeManifest(manifest));
   }
 
-  return learnedPolicyPromise;
+  return manifestPromise;
+}
+
+async function resolveManifestEntry(modelId) {
+  const manifest = await loadLearnedModelManifest();
+  const entry =
+    manifest.models.find((model) => model.id === modelId) ??
+    manifest.models.find((model) => model.id === manifest.defaultModelId) ??
+    manifest.models[0];
+
+  return { manifest, entry };
+}
+
+export async function loadLearnedPolicyModel(modelId = null) {
+  const { entry } = await resolveManifestEntry(modelId);
+
+  if (!modelPromiseCache.has(entry.id)) {
+    modelPromiseCache.set(
+      entry.id,
+      fetch(new URL(entry.path, MANIFEST_URL))
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to load learned policy model: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then((model) =>
+          hydrateModel({
+            ...model,
+            id: entry.id,
+            label: entry.label,
+            description: entry.description,
+          }),
+        ),
+    );
+  }
+
+  return modelPromiseCache.get(entry.id);
 }
 
 export async function analyzeLearnedMove({
@@ -160,9 +240,10 @@ export async function analyzeLearnedMove({
   currentPair,
   nextQueue = [],
   settings = {},
+  modelId = null,
 }) {
   const startedAt = performance.now();
-  const model = await loadLearnedPolicyModel();
+  const model = await loadLearnedPolicyModel(modelId);
   const normalizedSettings = normalizeSettings(settings);
   const input = encodePolicyInput({
     board,
@@ -202,7 +283,9 @@ export async function analyzeLearnedMove({
     expandedNodeCount: 0,
     candidateCount: candidates.length,
     elapsedMs: performance.now() - startedAt,
-    modelName: model.name ?? "policy_mlp",
+    modelId: model.id ?? modelId,
+    modelName: model.name ?? model.label ?? "policy_mlp",
+    modelLabel: model.label ?? model.name ?? "policy_mlp",
     inputDim: input.length,
   };
 }

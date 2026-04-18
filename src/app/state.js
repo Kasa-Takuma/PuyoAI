@@ -8,6 +8,7 @@ import { resolveTurn } from "../core/engine.js";
 import { PRESETS } from "../core/presets.js";
 import { NEXT_PREVIEW_COUNT } from "../core/constants.js";
 import { createRng, fillQueue } from "../core/randomizer.js";
+import { DEFAULT_SEARCH_PROFILE_ID } from "../ai/search-profiles.js";
 import {
   createAiSnapshot,
   createPolicyTrainingSample,
@@ -33,6 +34,18 @@ function normalizeSeed(seedText) {
   return trimmed.length > 0 ? trimmed : "puyoai";
 }
 
+function normalizeSeedOffset(seedOffset) {
+  return Math.max(0, Number.parseInt(seedOffset, 10) || 0);
+}
+
+function deriveGameSeed(seedBase, seedOffset) {
+  const normalizedBase = normalizeSeed(seedBase);
+  const normalizedOffset = normalizeSeedOffset(seedOffset);
+  return normalizedOffset > 0
+    ? `${normalizedBase}::game-${normalizedOffset + 1}`
+    : normalizedBase;
+}
+
 function normalizeAiSettings(aiSettings) {
   return {
     depth: Math.max(1, Math.min(4, Number.parseInt(aiSettings?.depth, 10) || 3)),
@@ -40,6 +53,10 @@ function normalizeAiSettings(aiSettings) {
       4,
       Math.min(96, Number.parseInt(aiSettings?.beamWidth, 10) || 24),
     ),
+    searchProfile:
+      typeof aiSettings?.searchProfile === "string" && aiSettings.searchProfile.length > 0
+        ? aiSettings.searchProfile
+        : DEFAULT_SEARCH_PROFILE_ID,
   };
 }
 
@@ -47,16 +64,52 @@ function normalizeAiMode(aiMode) {
   return aiMode === "learned" ? "learned" : "search";
 }
 
+function normalizeLearnedModels(learnedModels) {
+  if (!Array.isArray(learnedModels)) {
+    return [];
+  }
+
+  return learnedModels
+    .filter((model) => model && typeof model.id === "string" && typeof model.label === "string")
+    .map((model) => ({
+      id: model.id,
+      label: model.label,
+      path: model.path ?? null,
+      description: model.description ?? "",
+    }));
+}
+
+function normalizeSelectedLearnedModelId(learnedModels, selectedLearnedModelId) {
+  const normalizedModels = normalizeLearnedModels(learnedModels);
+  if (normalizedModels.length === 0) {
+    return null;
+  }
+
+  if (
+    typeof selectedLearnedModelId === "string" &&
+    normalizedModels.some((model) => model.id === selectedLearnedModelId)
+  ) {
+    return selectedLearnedModelId;
+  }
+
+  return normalizedModels[0].id;
+}
+
 export function createGameState({
   presetId = "sandbox",
   seed = "puyoai",
+  seedOffset = 0,
   existingAiDataset = [],
   aiSettings = { depth: 3, beamWidth: 24 },
   aiMode = "search",
+  learnedModels = [],
+  selectedLearnedModelId = null,
 } = {}) {
   const preset = PRESETS[presetId] ?? PRESETS.sandbox;
-  const normalizedSeed = normalizeSeed(seed);
-  const rng = createRng(`${presetId}:${normalizedSeed}`);
+  const normalizedSeedBase = normalizeSeed(seed);
+  const normalizedSeedOffset = normalizeSeedOffset(seedOffset);
+  const derivedSeed = deriveGameSeed(normalizedSeedBase, normalizedSeedOffset);
+  const rng = createRng(`${presetId}:${derivedSeed}`);
 
   const currentPair = clonePair(preset.currentPair);
   const nextQueue = cloneQueue(preset.nextQueue);
@@ -66,10 +119,13 @@ export function createGameState({
   const selectedAction = preset.suggestedAction
     ? encodeAction(preset.suggestedAction)
     : encodeAction(legalActions[0]);
+  const normalizedLearnedModels = normalizeLearnedModels(learnedModels);
 
   return {
     presetId,
-    seed: normalizedSeed,
+    seed: derivedSeed,
+    seedBase: normalizedSeedBase,
+    seedOffset: normalizedSeedOffset,
     rng,
     board: cloneBoard(preset.board),
     currentPair,
@@ -86,6 +142,11 @@ export function createGameState({
     selectedAction,
     aiMode: normalizeAiMode(aiMode),
     aiSettings: normalizeAiSettings(aiSettings),
+    learnedModels: normalizedLearnedModels,
+    selectedLearnedModelId: normalizeSelectedLearnedModelId(
+      normalizedLearnedModels,
+      selectedLearnedModelId,
+    ),
     aiBusy: false,
     aiStatus: "idle",
     aiAnalysis: null,
@@ -118,6 +179,23 @@ export function setAiSetting(state, key, value) {
 
 export function setAiMode(state, aiMode) {
   state.aiMode = normalizeAiMode(aiMode);
+  state.aiAnalysis = null;
+  state.aiLastError = null;
+}
+
+export function setLearnedModels(state, learnedModels, selectedLearnedModelId = null) {
+  state.learnedModels = normalizeLearnedModels(learnedModels);
+  state.selectedLearnedModelId = normalizeSelectedLearnedModelId(
+    state.learnedModels,
+    selectedLearnedModelId ?? state.selectedLearnedModelId,
+  );
+}
+
+export function setSelectedLearnedModelId(state, selectedLearnedModelId) {
+  state.selectedLearnedModelId = normalizeSelectedLearnedModelId(
+    state.learnedModels,
+    selectedLearnedModelId,
+  );
   state.aiAnalysis = null;
   state.aiLastError = null;
 }
@@ -193,6 +271,7 @@ export function resetReplayToLatest(state) {
 export function createAiRequestPayload(state) {
   return {
     mode: state.aiMode,
+    modelId: state.selectedLearnedModelId,
     board: cloneBoard(state.board),
     currentPair: clonePair(state.currentPair),
     nextQueue: cloneQueue(state.nextQueue),

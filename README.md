@@ -157,6 +157,25 @@ Once `models/policy_mlp.web.json` exists, the normal viewer page can switch betw
 
 Open `http://localhost:4173`, change `AI Mode` to `Learned`, and then use `AI Move` / `AI Run` to watch the learned policy stack on the same field UI.
 
+### 7. Train a whole model suite in one command
+
+The repo also includes a suite runner and a default preset list in [training/model_suite.json](/Users/takuma/PuyoAI/training/model_suite.json:1).
+
+```bash
+python3 -m training.run_model_suite \
+  --slim /path/to/puyoai-search-slim.json \
+  --focus /path/to/puyoai-search-chain-focus.json
+```
+
+This sequentially:
+
+- trains every configured model preset
+- evaluates each checkpoint
+- exports each checkpoint to `models/<id>.web.json`
+- writes `models/manifest.json` for the web viewer
+
+After that, the normal viewer can switch among multiple learned models with the `Learned Model` selector.
+
 ## Test
 
 ```bash

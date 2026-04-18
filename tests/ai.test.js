@@ -127,6 +127,37 @@ test("search analysis can be serialized into a training sample", () => {
   assert.equal(sample.search.settings.depth, 2);
 });
 
+test("search AI preserves the selected search profile in its analysis settings", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, searchProfile: "survival_v1" },
+  });
+
+  assert.equal(analysis.objective, "survival_v1");
+  assert.equal(analysis.settings.searchProfile, "survival_v1");
+});
+
 test("slim policy sample keeps only lightweight supervision fields", () => {
   const board = boardFromRows([
     "......",

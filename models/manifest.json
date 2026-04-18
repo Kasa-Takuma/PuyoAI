@@ -1,0 +1,342 @@
+{
+  "format": "puyoai-model-manifest-v1",
+  "defaultModelId": "baseline",
+  "models": [
+    {
+      "id": "compact_fast",
+      "label": "Compact Fast",
+      "description": "Small and cheap baseline for quick comparisons.",
+      "path": "./compact_fast.web.json",
+      "checkpointPath": "./compact_fast.pt",
+      "train": {
+        "epochs": 10,
+        "batch_size": 128,
+        "lr": 0.0008,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 192,
+        "dropout": 0.14,
+        "focus_weight": 1.8,
+        "distill_weight": 0.15,
+        "teacher_temperature": 18.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 3.1141342901160463,
+          "top1": 0.1965617100252792,
+          "top3": 0.40765095516943456,
+          "samples": 125004,
+          "focus_top1": 0.39789377289377287,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 3.0073108351397075,
+          "top1": 0.16850778373254585,
+          "top3": 0.37425717306500417,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 3.880764509482511,
+          "top1": 0.39789377289377287,
+          "top3": 0.6473050758765044,
+          "samples": 15288,
+          "focus_top1": 0.39789377289377287,
+          "focus_samples": 15288
+        }
+      }
+    },
+    {
+      "id": "baseline",
+      "label": "Baseline MLP",
+      "description": "Teacher imitation baseline with balanced settings.",
+      "path": "./baseline.web.json",
+      "checkpointPath": "./baseline.pt",
+      "train": {
+        "epochs": 12,
+        "batch_size": 128,
+        "lr": 0.001,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 256,
+        "dropout": 0.12,
+        "focus_weight": 2.0,
+        "distill_weight": 0.2,
+        "teacher_temperature": 16.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 2.9584858073207427,
+          "top1": 0.2727512719592973,
+          "top3": 0.47504879843845,
+          "samples": 125004,
+          "focus_top1": 0.6327838827838828,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 2.9576201866125844,
+          "top1": 0.22258376171205657,
+          "top3": 0.4283787232491159,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 2.9646980238484812,
+          "top1": 0.6327838827838828,
+          "top3": 0.809981684981685,
+          "samples": 15288,
+          "focus_top1": 0.6327838827838828,
+          "focus_samples": 15288
+        }
+      }
+    },
+    {
+      "id": "stable_stack",
+      "label": "Stable Stack",
+      "description": "Slightly more conservative settings aimed at surviving longer.",
+      "path": "./stable_stack.web.json",
+      "checkpointPath": "./stable_stack.pt",
+      "train": {
+        "epochs": 16,
+        "batch_size": 96,
+        "lr": 0.00045,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 320,
+        "dropout": 0.1,
+        "focus_weight": 2.4,
+        "distill_weight": 0.25,
+        "teacher_temperature": 15.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 3.0445581392793137,
+          "top1": 0.2883507727752712,
+          "top3": 0.4866404275063198,
+          "samples": 125004,
+          "focus_top1": 0.6981946624803768,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 3.04029097622781,
+          "top1": 0.23124248058624083,
+          "top3": 0.43609865470852016,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 3.075181905915137,
+          "top1": 0.6981946624803768,
+          "top3": 0.8493589743589743,
+          "samples": 15288,
+          "focus_top1": 0.6981946624803768,
+          "focus_samples": 15288
+        }
+      }
+    },
+    {
+      "id": "focus_heavy",
+      "label": "Focus Heavy",
+      "description": "Weights 6+ chain situations more strongly for larger-chain behavior.",
+      "path": "./focus_heavy.web.json",
+      "checkpointPath": "./focus_heavy.pt",
+      "train": {
+        "epochs": 20,
+        "batch_size": 96,
+        "lr": 0.0003,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 512,
+        "dropout": 0.08,
+        "focus_weight": 3.5,
+        "distill_weight": 0.35,
+        "teacher_temperature": 12.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 3.1200844141041686,
+          "top1": 0.33523727240728296,
+          "top3": 0.5167994624172026,
+          "samples": 125004,
+          "focus_top1": 0.8397435897435898,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 3.1677840891127436,
+          "top1": 0.26493856866819787,
+          "top3": 0.4600422910058697,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 2.7777624848873312,
+          "top1": 0.8397435897435898,
+          "top3": 0.924123495552067,
+          "samples": 15288,
+          "focus_top1": 0.8397435897435898,
+          "focus_samples": 15288
+        }
+      }
+    },
+    {
+      "id": "long_horizon",
+      "label": "Long Horizon",
+      "description": "A middle ground model tuned to survive longer before firing.",
+      "path": "./long_horizon.web.json",
+      "checkpointPath": "./long_horizon.pt",
+      "train": {
+        "epochs": 18,
+        "batch_size": 96,
+        "lr": 0.0004,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 384,
+        "dropout": 0.1,
+        "focus_weight": 3.0,
+        "distill_weight": 0.3,
+        "teacher_temperature": 14.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 3.068364992007756,
+          "top1": 0.31754183866116287,
+          "top3": 0.5026079165466705,
+          "samples": 125004,
+          "focus_top1": 0.7895081109366824,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 3.0982307593636205,
+          "top1": 0.2517773159794378,
+          "top3": 0.4479838856684531,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 2.854030049327529,
+          "top1": 0.7895081109366824,
+          "top3": 0.8946232339089482,
+          "samples": 15288,
+          "focus_top1": 0.7895081109366824,
+          "focus_samples": 15288
+        }
+      }
+    },
+    {
+      "id": "wide_balance",
+      "label": "Wide Balance",
+      "description": "Larger hidden layer with moderate regularization for broader imitation.",
+      "path": "./wide_balance.web.json",
+      "checkpointPath": "./wide_balance.pt",
+      "train": {
+        "epochs": 18,
+        "batch_size": 96,
+        "lr": 0.0004,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 512,
+        "dropout": 0.1,
+        "focus_weight": 2.8,
+        "distill_weight": 0.28,
+        "teacher_temperature": 14.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 2.788870099044709,
+          "top1": 0.3595564941921858,
+          "top3": 0.5462545198553647,
+          "samples": 125004,
+          "focus_top1": 0.8617870225013082,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 2.904538952711917,
+          "top1": 0.2895749024754822,
+          "top3": 0.4915326843851398,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 1.9587599246805092,
+          "top1": 0.8617870225013082,
+          "top3": 0.9389717425431711,
+          "samples": 15288,
+          "focus_top1": 0.8617870225013082,
+          "focus_samples": 15288
+        }
+      }
+    },
+    {
+      "id": "aggressive_chain",
+      "label": "Aggressive Chain",
+      "description": "Most chain-biased preset in the suite, tuned to favor larger fires.",
+      "path": "./aggressive_chain.web.json",
+      "checkpointPath": "./aggressive_chain.pt",
+      "train": {
+        "epochs": 24,
+        "batch_size": 80,
+        "lr": 0.00025,
+        "weight_decay": 0.0001,
+        "val_fraction": 0.1,
+        "seed": 13,
+        "hidden_dim": 640,
+        "dropout": 0.06,
+        "focus_weight": 4.2,
+        "distill_weight": 0.4,
+        "teacher_temperature": 10.0,
+        "max_next_pairs": 5,
+        "device": "auto"
+      },
+      "evaluation": {
+        "combined": {
+          "loss": 2.937643043487794,
+          "top1": 0.39584333301334357,
+          "top3": 0.5730856612588398,
+          "samples": 125004,
+          "focus_top1": 0.9279173207744636,
+          "focus_samples": 15288
+        },
+        "slim": {
+          "loss": 3.067549966697536,
+          "top1": 0.32170330671916586,
+          "top3": 0.5184840861861534,
+          "samples": 109716,
+          "focus_top1": null,
+          "focus_samples": 0
+        },
+        "focus": {
+          "loss": 2.005351843976151,
+          "top1": 0.9279173207744636,
+          "top3": 0.9649398220826793,
+          "samples": 15288,
+          "focus_top1": 0.9279173207744636,
+          "focus_samples": 15288
+        }
+      }
+    }
+  ]
+}

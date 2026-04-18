@@ -1,3 +1,5 @@
+import { SEARCH_PROFILES } from "../ai/search-profiles.js";
+
 function runnerStatusLabel(state) {
   if (state.stopRequested) {
     return "停止要求中";
@@ -166,6 +168,18 @@ export function renderBatchApp(root, state) {
               <input id="batch-beam" type="number" min="4" max="96" value="${
                 state.aiSettings.beamWidth
               }" ${controlsDisabled} />
+            </label>
+            <label class="field wide">
+              Search Profile
+              <select id="batch-search-profile" ${controlsDisabled}>
+                ${SEARCH_PROFILES.map(
+                  (profile) => `
+                    <option value="${profile.id}" ${
+                      profile.id === state.aiSettings.searchProfile ? "selected" : ""
+                    }>${profile.label}</option>
+                  `,
+                ).join("")}
+              </select>
             </label>
           </div>
 

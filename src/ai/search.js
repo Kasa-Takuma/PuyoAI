@@ -5,8 +5,13 @@ import {
   featuresToVector,
   scoreBoardFeatures,
 } from "./features.js";
+import {
+  DEFAULT_SEARCH_PROFILE_ID,
+  getSearchProfile,
+  SEARCH_PROFILES,
+} from "./search-profiles.js";
 
-export const SEARCH_OBJECTIVE = "chain_builder_v3";
+export { SEARCH_PROFILES, DEFAULT_SEARCH_PROFILE_ID };
 
 function clampDepth(depth) {
   return Math.max(1, Math.min(4, Number.parseInt(depth, 10) || 1));
@@ -17,9 +22,11 @@ function clampBeamWidth(beamWidth) {
 }
 
 function normalizeSettings(settings = {}) {
+  const normalizedProfile = getSearchProfile(settings.searchProfile ?? settings.profileId);
   return {
     depth: clampDepth(settings.depth ?? 3),
     beamWidth: clampBeamWidth(settings.beamWidth ?? 24),
+    searchProfile: normalizedProfile.id,
   };
 }
 
@@ -40,9 +47,60 @@ function rememberCandidateNode(candidatePools, node, maxPerRoot = 3) {
   candidatePools.set(node.rootKey, nodes);
 }
 
-function scoreTurnResult(result) {
+const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
+  chain_builder_v3: {
+    topoutPenalty: -5_000_000,
+    singleChainPenalty: -240,
+    singleScoreScale: 0.15,
+    chainValueBase: 1100,
+    chainExponent: 3,
+    scoreScale: 0.7,
+    allClearBonus: 180,
+  },
+  balanced_v1: {
+    topoutPenalty: -5_500_000,
+    singleChainPenalty: -280,
+    singleScoreScale: 0.12,
+    chainValueBase: 980,
+    chainExponent: 3,
+    scoreScale: 0.65,
+    allClearBonus: 160,
+  },
+  survival_v1: {
+    topoutPenalty: -6_000_000,
+    singleChainPenalty: -420,
+    singleScoreScale: 0.08,
+    chainValueBase: 760,
+    chainExponent: 3,
+    scoreScale: 0.55,
+    allClearBonus: 120,
+  },
+  aggressive_chain_v1: {
+    topoutPenalty: -4_600_000,
+    singleChainPenalty: -180,
+    singleScoreScale: 0.18,
+    chainValueBase: 1350,
+    chainExponent: 3,
+    scoreScale: 0.78,
+    allClearBonus: 220,
+  },
+  long_horizon_v1: {
+    topoutPenalty: -5_700_000,
+    singleChainPenalty: -360,
+    singleScoreScale: 0.1,
+    chainValueBase: 900,
+    chainExponent: 3,
+    scoreScale: 0.62,
+    allClearBonus: 150,
+  },
+});
+
+function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
+  const weights =
+    TURN_RESULT_PROFILE_WEIGHTS[profileId] ??
+    TURN_RESULT_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
   if (result.topout) {
-    return -5_000_000;
+    return weights.topoutPenalty;
   }
 
   if (result.totalChains === 0) {
@@ -50,22 +108,23 @@ function scoreTurnResult(result) {
   }
 
   if (result.totalChains === 1) {
-    return -240 + result.totalScore * 0.15;
+    return weights.singleChainPenalty + result.totalScore * weights.singleScoreScale;
   }
 
-  const chainValue = 1_100 * result.totalChains ** 3;
-  const scoreValue = result.totalScore * 0.7;
-  const allClearBonus = result.allClear ? 180 : 0;
+  const chainValue =
+    weights.chainValueBase * result.totalChains ** weights.chainExponent;
+  const scoreValue = result.totalScore * weights.scoreScale;
+  const allClearBonus = result.allClear ? weights.allClearBonus : 0;
   return chainValue + scoreValue + allClearBonus;
 }
 
-function createExpandedNode(node, pair, action, layerIndex) {
+function createExpandedNode(node, pair, action, layerIndex, profileId) {
   const result = resolveTurn(node.board, pair, action);
   const features = extractBoardFeatures(result.finalBoard, {
     includeVirtualChains: false,
   });
-  const heuristicScore = scoreBoardFeatures(features);
-  const turnValue = scoreTurnResult(result);
+  const heuristicScore = scoreBoardFeatures(features, profileId);
+  const turnValue = scoreTurnResult(result, profileId);
   const cumulativeValue = node.cumulativeValue + turnValue;
   const searchScore = cumulativeValue + heuristicScore;
   const rootAction = node.rootAction ?? cloneAction(action);
@@ -80,6 +139,7 @@ function createExpandedNode(node, pair, action, layerIndex) {
 
   return {
     board: result.finalBoard,
+    profileId,
     rootAction,
     rootKey,
     rootTurn,
@@ -98,7 +158,7 @@ function createCandidate(node) {
   const refinedFeatures = extractBoardFeatures(node.board, {
     includeVirtualChains: true,
   });
-  const heuristicScore = scoreBoardFeatures(refinedFeatures);
+  const heuristicScore = scoreBoardFeatures(refinedFeatures, node.profileId);
   const searchScore = node.cumulativeValue + heuristicScore;
 
   return {
@@ -127,6 +187,7 @@ function createCandidate(node) {
 export function searchBestMove({ board, currentPair, nextQueue = [], settings = {} }) {
   const startedAt = performance.now();
   const normalizedSettings = normalizeSettings(settings);
+  const profile = getSearchProfile(normalizedSettings.searchProfile);
   const candidatePools = new Map();
   const rootActions = enumerateLegalActions(board, currentPair);
 
@@ -135,6 +196,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
     const node = createExpandedNode(
       {
         board,
+        profileId: profile.id,
         rootAction: null,
         rootKey: null,
         rootTurn: null,
@@ -145,6 +207,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
       currentPair,
       action,
       0,
+      profile.id,
     );
     expandedNodeCount += 1;
     rememberCandidateNode(candidatePools, node);
@@ -165,7 +228,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
     for (const node of frontier) {
       const actions = enumerateLegalActions(node.board, pair);
       for (const action of actions) {
-        const child = createExpandedNode(node, pair, action, depthIndex);
+        const child = createExpandedNode(node, pair, action, depthIndex, profile.id);
         expandedNodeCount += 1;
         rememberCandidateNode(candidatePools, child);
         expanded.push(child);
@@ -194,7 +257,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
   const elapsedMs = performance.now() - startedAt;
 
   return {
-    objective: SEARCH_OBJECTIVE,
+    objective: profile.id,
     settings: normalizedSettings,
     bestAction,
     bestActionKey: bestAction ? encodeAction(bestAction) : null,

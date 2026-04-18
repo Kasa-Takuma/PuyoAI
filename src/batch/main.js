@@ -3,6 +3,7 @@ import {
   createSlimDatasetFilename,
   serializeAiDataset,
 } from "../ai/dataset.js";
+import { DEFAULT_SEARCH_PROFILE_ID } from "../ai/search-profiles.js";
 import { renderBatchApp } from "./render.js";
 
 const root = document.querySelector("#app");
@@ -27,6 +28,10 @@ function normalizeAiSettings(settings) {
   return {
     depth: Math.max(1, Math.min(4, Number.parseInt(settings.depth, 10) || 3)),
     beamWidth: Math.max(4, Math.min(96, Number.parseInt(settings.beamWidth, 10) || 24)),
+    searchProfile:
+      typeof settings?.searchProfile === "string" && settings.searchProfile.length > 0
+        ? settings.searchProfile
+        : DEFAULT_SEARCH_PROFILE_ID,
   };
 }
 
@@ -52,7 +57,7 @@ function createBatchState() {
   return {
     parallelCount,
     seedBase: "batch",
-    aiSettings: { depth: 3, beamWidth: 24 },
+    aiSettings: { depth: 3, beamWidth: 24, searchProfile: DEFAULT_SEARCH_PROFILE_ID },
     running: false,
     stopRequested: false,
     slimDataset: [],
@@ -233,6 +238,14 @@ function bindEvents() {
     state.aiSettings = normalizeAiSettings({
       ...state.aiSettings,
       beamWidth: event.target.value,
+    });
+    rerender();
+  });
+
+  document.querySelector("#batch-search-profile")?.addEventListener("change", (event) => {
+    state.aiSettings = normalizeAiSettings({
+      ...state.aiSettings,
+      searchProfile: event.target.value,
     });
     rerender();
   });

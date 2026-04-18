@@ -1,0 +1,117 @@
+{
+  "format": "puyoai-model-suite-v1",
+  "defaultModelId": "baseline",
+  "defaults": {
+    "epochs": 12,
+    "batch_size": 128,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "val_fraction": 0.1,
+    "seed": 13,
+    "hidden_dim": 256,
+    "dropout": 0.12,
+    "focus_weight": 2.0,
+    "distill_weight": 0.2,
+    "teacher_temperature": 16.0,
+    "max_next_pairs": 5,
+    "device": "auto"
+  },
+  "models": [
+    {
+      "id": "compact_fast",
+      "label": "Compact Fast",
+      "description": "Small and cheap baseline for quick comparisons.",
+      "train": {
+        "epochs": 10,
+        "batch_size": 128,
+        "lr": 0.0008,
+        "hidden_dim": 192,
+        "dropout": 0.14,
+        "focus_weight": 1.8,
+        "distill_weight": 0.15,
+        "teacher_temperature": 18.0
+      }
+    },
+    {
+      "id": "baseline",
+      "label": "Baseline MLP",
+      "description": "Teacher imitation baseline with balanced settings.",
+      "train": {}
+    },
+    {
+      "id": "stable_stack",
+      "label": "Stable Stack",
+      "description": "Slightly more conservative settings aimed at surviving longer.",
+      "train": {
+        "epochs": 16,
+        "batch_size": 96,
+        "lr": 0.00045,
+        "hidden_dim": 320,
+        "dropout": 0.1,
+        "focus_weight": 2.4,
+        "distill_weight": 0.25,
+        "teacher_temperature": 15.0
+      }
+    },
+    {
+      "id": "focus_heavy",
+      "label": "Focus Heavy",
+      "description": "Weights 6+ chain situations more strongly for larger-chain behavior.",
+      "train": {
+        "epochs": 20,
+        "batch_size": 96,
+        "lr": 0.0003,
+        "hidden_dim": 512,
+        "dropout": 0.08,
+        "focus_weight": 3.5,
+        "distill_weight": 0.35,
+        "teacher_temperature": 12.0
+      }
+    },
+    {
+      "id": "long_horizon",
+      "label": "Long Horizon",
+      "description": "A middle ground model tuned to survive longer before firing.",
+      "train": {
+        "epochs": 18,
+        "batch_size": 96,
+        "lr": 0.0004,
+        "hidden_dim": 384,
+        "dropout": 0.1,
+        "focus_weight": 3.0,
+        "distill_weight": 0.3,
+        "teacher_temperature": 14.0
+      }
+    },
+    {
+      "id": "wide_balance",
+      "label": "Wide Balance",
+      "description": "Larger hidden layer with moderate regularization for broader imitation.",
+      "train": {
+        "epochs": 18,
+        "batch_size": 96,
+        "lr": 0.0004,
+        "hidden_dim": 512,
+        "dropout": 0.1,
+        "focus_weight": 2.8,
+        "distill_weight": 0.28,
+        "teacher_temperature": 14.0
+      }
+    },
+    {
+      "id": "aggressive_chain",
+      "label": "Aggressive Chain",
+      "description": "Most chain-biased preset in the suite, tuned to favor larger fires.",
+      "train": {
+        "epochs": 24,
+        "batch_size": 80,
+        "lr": 0.00025,
+        "hidden_dim": 640,
+        "dropout": 0.06,
+        "focus_weight": 4.2,
+        "distill_weight": 0.4,
+        "teacher_temperature": 10.0
+      }
+    }
+  ]
+}

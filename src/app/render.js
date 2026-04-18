@@ -1,4 +1,5 @@
 import { summarizeBestAction } from "../ai/dataset.js";
+import { SEARCH_PROFILES } from "../ai/search-profiles.js";
 import {
   BOARD_HEIGHT,
   BOARD_WIDTH,
@@ -81,6 +82,13 @@ function aiModeLabel(aiMode) {
   return aiMode === "learned" ? "Learned AI" : "Search AI";
 }
 
+function selectedLearnedModelLabel(state) {
+  return (
+    state.learnedModels.find((model) => model.id === state.selectedLearnedModelId)?.label ??
+    "No model"
+  );
+}
+
 function aiStatusLabel(state) {
   switch (state.aiStatus) {
     case "searching":
@@ -97,6 +105,8 @@ function aiStatusLabel(state) {
         : `連続実行中 残り ${state.aiAutoRunRemaining} 手`;
     case "complete":
       return "連続実行完了";
+    case "restarting":
+      return "1秒後に再スタート";
     case "stopped":
       return "ゲーム終了で停止";
     case "stop-requested":
@@ -225,7 +235,7 @@ function analysisMarkup(state) {
 
       <div class="analysis-note">
         <span>turn ${analysis.snapshot.turn} の盤面に対する learned policy の結果です。</span>
-        <span>input dim: ${analysis.inputDim}</span>
+        <span>${analysis.modelLabel ?? analysis.modelName} / input dim: ${analysis.inputDim}</span>
       </div>
 
       ${candidateMarkup(analysis)}
@@ -283,6 +293,8 @@ export function renderApp(root, state) {
   const aiBusyDisabled = state.aiBusy ? "disabled" : "";
   const aiSettingsDisabled =
     state.aiBusy || state.aiMode === "learned" ? "disabled" : "";
+  const learnedModelDisabled =
+    state.aiBusy || state.learnedModels.length === 0 ? "disabled" : "";
 
   root.innerHTML = `
     <div class="shell">
@@ -386,6 +398,25 @@ export function renderApp(root, state) {
             </label>
 
             <label class="field">
+              <span>Learned Model</span>
+              <select id="learned-model" ${learnedModelDisabled}>
+                ${
+                  state.learnedModels.length > 0
+                    ? state.learnedModels
+                        .map(
+                          (model) => `
+                            <option value="${model.id}" ${
+                              model.id === state.selectedLearnedModelId ? "selected" : ""
+                            }>${model.label}</option>
+                          `,
+                        )
+                        .join("")
+                    : `<option value="">No learned models</option>`
+                }
+              </select>
+            </label>
+
+            <label class="field">
               <span>Depth</span>
               <select id="ai-depth" ${aiSettingsDisabled}>
                 ${[1, 2, 3, 4]
@@ -405,6 +436,19 @@ export function renderApp(root, state) {
               <input id="ai-beam" type="number" min="4" max="96" step="1" value="${
                 state.aiSettings.beamWidth
               }" ${aiSettingsDisabled} />
+            </label>
+
+            <label class="field wide">
+              <span>Search Profile</span>
+              <select id="ai-search-profile" ${aiSettingsDisabled}>
+                ${SEARCH_PROFILES.map(
+                  (profile) => `
+                    <option value="${profile.id}" ${
+                      profile.id === state.aiSettings.searchProfile ? "selected" : ""
+                    }>${profile.label}</option>
+                  `,
+                ).join("")}
+              </select>
             </label>
           </div>
 
@@ -442,7 +486,11 @@ export function renderApp(root, state) {
           </div>
 
           <div class="ai-note">
-            <span>dataset samples: ${state.aiDataset.length}</span>
+            <span>${
+              state.aiMode === "learned"
+                ? `selected model: ${selectedLearnedModelLabel(state)}`
+                : `dataset samples: ${state.aiDataset.length}`
+            }</span>
             <span>${
               state.aiLastError
                 ? `error: ${state.aiLastError}`
@@ -486,7 +534,7 @@ export function renderApp(root, state) {
 
             <label class="field">
               <span>Seed</span>
-              <input id="seed-input" value="${state.seed}" ${aiBusyDisabled} />
+              <input id="seed-input" value="${state.seedBase}" ${aiBusyDisabled} />
             </label>
 
             <label class="field wide">
@@ -498,6 +546,7 @@ export function renderApp(root, state) {
           </div>
 
           <p class="preset-copy">${preset.description}</p>
+          <p class="preset-copy">Current game seed: ${state.seed}</p>
 
           <div class="button-row">
             <button id="reset-button" class="soft" ${aiBusyDisabled}>Reset</button>
