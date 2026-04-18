@@ -18,15 +18,38 @@ export const FEATURE_KEYS = [
   "maxHeight",
   "hiddenCells",
   "surfaceRoughness",
+  "staircaseScore",
+  "valleyDepth",
   "adjacency",
   "group2Count",
   "group3Count",
+  "extendableGroup2Count",
+  "readyGroup3Count",
   "largeGroupCount",
   "isolatedSingles",
   "colorBalance",
   "centerPreference",
   "columnsUsed",
 ];
+
+function collectGroupLiberties(board, cells) {
+  const liberties = new Set();
+
+  for (const cell of cells) {
+    for (const [dx, dy] of NEIGHBOR_OFFSETS) {
+      const nx = cell.x + dx;
+      const ny = cell.y + dy;
+      if (nx < 0 || nx >= BOARD_WIDTH || ny < 0 || ny >= BOARD_HEIGHT) {
+        continue;
+      }
+      if (board[ny][nx] === COLORS.EMPTY) {
+        liberties.add(`${nx}:${ny}`);
+      }
+    }
+  }
+
+  return liberties.size;
+}
 
 function collectGroups(board) {
   const visited = Array.from({ length: BOARD_HEIGHT }, () =>
@@ -98,11 +121,37 @@ export function extractBoardFeatures(board) {
   const surfaceRoughness = heights
     .slice(1)
     .reduce((sum, height, index) => sum + Math.abs(height - heights[index]), 0);
+  const staircaseScore = heights.slice(1).reduce((sum, height, index) => {
+    const diff = Math.abs(height - heights[index]);
+    if (diff === 1) {
+      return sum + 3;
+    }
+    if (diff === 2) {
+      return sum + 1;
+    }
+    if (diff >= 4) {
+      return sum - (diff - 3);
+    }
+    return sum;
+  }, 0);
+  const valleyDepth = heights.reduce((sum, height, index) => {
+    if (index === 0 || index === heights.length - 1) {
+      return sum;
+    }
+    const neighborFloor = Math.min(heights[index - 1], heights[index + 1]);
+    return sum + Math.max(0, neighborFloor - height);
+  }, 0);
   const maxHeight = Math.max(...heights);
   const columnsUsed = heights.filter((height) => height > 0).length;
   const adjacency = groups.reduce((sum, group) => sum + Math.max(0, group.cells.length - 1), 0);
   const group2Count = groups.filter((group) => group.cells.length === 2).length;
   const group3Count = groups.filter((group) => group.cells.length === 3).length;
+  const extendableGroup2Count = groups.filter((group) => {
+    return group.cells.length === 2 && collectGroupLiberties(board, group.cells) >= 2;
+  }).length;
+  const readyGroup3Count = groups.filter((group) => {
+    return group.cells.length === 3 && collectGroupLiberties(board, group.cells) >= 1;
+  }).length;
   const largeGroupCount = groups.filter((group) => group.cells.length >= 4).length;
   const isolatedSingles = groups.filter((group) => group.cells.length === 1).length;
   const colorCounts = new Map();
@@ -136,9 +185,13 @@ export function extractBoardFeatures(board) {
     maxHeight,
     hiddenCells,
     surfaceRoughness,
+    staircaseScore,
+    valleyDepth,
     adjacency,
     group2Count,
     group3Count,
+    extendableGroup2Count,
+    readyGroup3Count,
     largeGroupCount,
     isolatedSingles,
     colorBalance,
@@ -154,16 +207,20 @@ export function featuresToVector(features) {
 
 export function scoreBoardFeatures(features) {
   return (
-    features.group3Count * 180 +
-    features.group2Count * 54 +
-    features.adjacency * 10 +
-    features.colorBalance * 90 +
-    features.centerPreference * 5 -
-    features.maxHeight * 44 -
-    features.hiddenCells * 2600 -
-    features.surfaceRoughness * 16 -
-    features.isolatedSingles * 18 -
-    features.heightSum * 3 +
-    features.columnsUsed * 8
+    features.readyGroup3Count * 260 +
+    features.extendableGroup2Count * 110 +
+    features.group3Count * 120 +
+    features.group2Count * 36 +
+    features.staircaseScore * 24 +
+    features.valleyDepth * 32 +
+    features.adjacency * 8 +
+    features.colorBalance * 72 +
+    features.centerPreference * 4 -
+    features.maxHeight * 56 -
+    features.hiddenCells * 3000 -
+    features.surfaceRoughness * 8 -
+    features.isolatedSingles * 24 -
+    features.heightSum * 4 +
+    features.columnsUsed * 6
   );
 }

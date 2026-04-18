@@ -81,11 +81,12 @@ function finalizeAiAnalysis(requestId, analysis) {
   rerender();
 
   if (pending.autoRun) {
-    if (!state.gameOver && state.aiAutoRunRemaining > 0) {
+    if (!state.gameOver && (state.aiContinuous || state.aiAutoRunRemaining > 0)) {
       window.setTimeout(runNextAiAutoTurn, 120);
       return;
     }
 
+    state.aiContinuous = false;
     state.aiAutoRunRemaining = 0;
     setAiStatus(state, state.gameOver ? "stopped" : "complete", false);
     rerender();
@@ -94,6 +95,7 @@ function finalizeAiAnalysis(requestId, analysis) {
 
 function failAiAnalysis(requestId, message) {
   pendingAiRequests.delete(requestId);
+  state.aiContinuous = false;
   setAiError(state, message);
   state.aiAutoRunRemaining = 0;
   rerender();
@@ -143,20 +145,46 @@ function requestAiAnalysis({ applyMove = false, autoRun = false } = {}) {
 
 function runNextAiAutoTurn() {
   if (state.gameOver) {
+    state.aiContinuous = false;
     state.aiAutoRunRemaining = 0;
     setAiStatus(state, "stopped", false);
     rerender();
     return;
   }
 
-  if (state.aiAutoRunRemaining <= 0) {
+  if (!state.aiContinuous && state.aiAutoRunRemaining <= 0) {
     setAiStatus(state, "complete", false);
     rerender();
     return;
   }
 
-  state.aiAutoRunRemaining -= 1;
+  if (!state.aiContinuous) {
+    state.aiAutoRunRemaining -= 1;
+  }
   requestAiAnalysis({ applyMove: true, autoRun: true });
+}
+
+function stopAiLoop() {
+  if (
+    !state.aiContinuous &&
+    state.aiAutoRunRemaining <= 0 &&
+    state.aiStatus !== "auto-search" &&
+    state.aiStatus !== "auto-ready" &&
+    state.aiStatus !== "stop-requested"
+  ) {
+    return;
+  }
+
+  state.aiContinuous = false;
+  state.aiAutoRunRemaining = 0;
+
+  if (state.aiBusy) {
+    setAiStatus(state, "stop-requested", true);
+  } else {
+    setAiStatus(state, "idle", false);
+  }
+
+  rerender();
 }
 
 function bindEvents() {
@@ -241,8 +269,22 @@ function bindEvents() {
     if (state.aiBusy || state.gameOver) {
       return;
     }
+    state.aiContinuous = false;
     state.aiAutoRunRemaining = 10;
     runNextAiAutoTurn();
+  });
+
+  document.querySelector("#ai-run")?.addEventListener("click", () => {
+    if (state.aiBusy || state.gameOver) {
+      return;
+    }
+    state.aiContinuous = true;
+    state.aiAutoRunRemaining = 0;
+    runNextAiAutoTurn();
+  });
+
+  document.querySelector("#ai-stop")?.addEventListener("click", () => {
+    stopAiLoop();
   });
 
   document.querySelector("#ai-export")?.addEventListener("click", () => {

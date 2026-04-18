@@ -7,7 +7,7 @@ import { boardFromRows } from "../src/core/board.js";
 import { COLORS } from "../src/core/constants.js";
 import { resolveTurn } from "../src/core/engine.js";
 
-test("search AI finds the obvious single-chain action", () => {
+test("search AI finds the obvious double-chain action", () => {
   const board = boardFromRows([
     "......",
     "......",
@@ -20,7 +20,8 @@ test("search AI finds the obvious single-chain action", () => {
     "......",
     "......",
     "......",
-    "RRR...",
+    "......",
+    "GGGRRR",
   ]);
   const currentPair = {
     axis: COLORS.RED,
@@ -35,8 +36,8 @@ test("search AI finds the obvious single-chain action", () => {
   });
   const result = resolveTurn(board, currentPair, analysis.bestAction);
 
-  assert.equal(result.totalChains, 1);
-  assert.equal(result.totalScore, 40);
+  assert.equal(result.totalChains, 2);
+  assert.equal(result.totalScore, 360);
 });
 
 test("search AI avoids immediate topout when a safe move exists", () => {
@@ -113,6 +114,7 @@ test("search analysis can be serialized into a training sample", () => {
   });
   const sample = createPolicyTrainingSample(snapshot, analysis);
 
+  assert.equal(sample.search.objective, "chain_builder_v2");
   assert.equal(sample.bestActionKey, analysis.bestActionKey);
   assert.equal(sample.candidates.length, analysis.candidates.length);
   assert.equal(sample.state.turn, 4);

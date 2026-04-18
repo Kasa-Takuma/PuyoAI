@@ -6,6 +6,8 @@ import {
   scoreBoardFeatures,
 } from "./features.js";
 
+export const SEARCH_OBJECTIVE = "chain_builder_v2";
+
 function clampDepth(depth) {
   return Math.max(1, Math.min(4, Number.parseInt(depth, 10) || 1));
 }
@@ -33,9 +35,12 @@ function scoreTurnResult(result) {
     return -2_000_000;
   }
 
-  const chainBonus = result.totalChains <= 0 ? 0 : 140 * 2 ** (result.totalChains - 1);
+  const chainBonus =
+    result.totalChains <= 1 ? 0 : 340 * 2 ** (result.totalChains - 2);
   const allClearBonus = result.allClear ? 800 : 0;
-  return result.totalScore * 4 + chainBonus + allClearBonus;
+  const singleChainPenalty =
+    result.totalChains === 1 && result.totalScore <= 200 ? 90 : 0;
+  return result.totalScore * 2 + chainBonus + allClearBonus - singleChainPenalty;
 }
 
 function createExpandedNode(node, pair, action, layerIndex) {
@@ -164,6 +169,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
   const elapsedMs = performance.now() - startedAt;
 
   return {
+    objective: SEARCH_OBJECTIVE,
     settings: normalizedSettings,
     bestAction,
     bestActionKey: bestAction ? encodeAction(bestAction) : null,

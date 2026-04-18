@@ -80,15 +80,21 @@ function aiStatusLabel(state) {
     case "searching":
       return "探索中";
     case "auto-search":
-      return `自動探索中 (${state.aiAutoRunRemaining + 1} 手目)`;
+      return state.aiContinuous
+        ? "連続探索中"
+        : `自動探索中 (${state.aiAutoRunRemaining + 1} 手目)`;
     case "ready":
       return "分析完了";
     case "auto-ready":
-      return `連続実行中 残り ${state.aiAutoRunRemaining} 手`;
+      return state.aiContinuous
+        ? "連続実行中"
+        : `連続実行中 残り ${state.aiAutoRunRemaining} 手`;
     case "complete":
       return "連続実行完了";
     case "stopped":
       return "ゲーム終了で停止";
+    case "stop-requested":
+      return "停止要求中";
     case "error":
       return "AIエラー";
     default:
@@ -163,7 +169,11 @@ function analysisMarkup(state) {
   }
 
   return `
-    <div class="analysis-head">
+      <div class="analysis-head">
+      <div class="metric-card">
+        <span class="metric-label">Objective</span>
+        <strong>${analysis.objective}</strong>
+      </div>
       <div class="metric-card">
         <span class="metric-label">Best Action</span>
         <strong>${summarizeBestAction(analysis)}</strong>
@@ -286,6 +296,84 @@ export function renderApp(root, state) {
           </div>
         </section>
 
+        <section class="panel ai-panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Search AI</p>
+              <h2>Planner</h2>
+            </div>
+            <div class="event-pill ${state.aiBusy ? "clear" : "idle"}">
+              ${aiStatusLabel(state)}
+            </div>
+          </div>
+
+          <div class="control-grid ai-grid">
+            <label class="field">
+              <span>Depth</span>
+              <select id="ai-depth" ${aiBusyDisabled}>
+                ${[1, 2, 3, 4]
+                  .map(
+                    (depth) => `
+                      <option value="${depth}" ${
+                        depth === state.aiSettings.depth ? "selected" : ""
+                      }>${depth}</option>
+                    `,
+                  )
+                  .join("")}
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Beam Width</span>
+              <input id="ai-beam" type="number" min="4" max="96" step="1" value="${
+                state.aiSettings.beamWidth
+              }" ${aiBusyDisabled} />
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="ai-analyze" class="soft" ${
+              state.gameOver || state.aiBusy ? "disabled" : ""
+            }>AI Analyze</button>
+            <button id="ai-move" class="accent" ${
+              state.gameOver || state.aiBusy ? "disabled" : ""
+            }>AI Move</button>
+            <button id="ai-run10" class="soft" ${
+              state.gameOver || state.aiBusy ? "disabled" : ""
+            }>AI x10</button>
+            <button id="ai-run" class="soft" ${
+              state.gameOver || state.aiBusy ? "disabled" : ""
+            }>AI Run</button>
+            <button id="ai-stop" class="soft" ${
+              !state.aiContinuous &&
+              state.aiAutoRunRemaining <= 0 &&
+              state.aiStatus !== "auto-search" &&
+              state.aiStatus !== "auto-ready" &&
+              state.aiStatus !== "stop-requested"
+                ? "disabled"
+                : ""
+            }>Stop</button>
+          </div>
+
+          <div class="button-row">
+            <button id="ai-export" class="soft" ${
+              state.aiDataset.length === 0 || state.aiBusy ? "disabled" : ""
+            }>Export Dataset</button>
+            <button id="ai-clear-log" class="soft" ${
+              state.aiDataset.length === 0 || state.aiBusy ? "disabled" : ""
+            }>Clear Dataset</button>
+          </div>
+
+          <div class="ai-note">
+            <span>dataset samples: ${state.aiDataset.length}</span>
+            <span>${
+              state.aiLastError ? `error: ${state.aiLastError}` : "探索結果はそのまま学習用 JSON に出力できます。"
+            }</span>
+          </div>
+
+          ${analysisMarkup(state)}
+        </section>
+
         <section class="panel control-panel">
           <div class="panel-head">
             <div>
@@ -391,72 +479,6 @@ export function renderApp(root, state) {
             <h3>Displayed Board Rows</h3>
             <pre>${boardToRows(board).join("\n")}</pre>
           </div>
-        </section>
-
-        <section class="panel ai-panel">
-          <div class="panel-head">
-            <div>
-              <p class="panel-kicker">Search AI</p>
-              <h2>Planner</h2>
-            </div>
-            <div class="event-pill ${state.aiBusy ? "clear" : "idle"}">
-              ${aiStatusLabel(state)}
-            </div>
-          </div>
-
-          <div class="control-grid ai-grid">
-            <label class="field">
-              <span>Depth</span>
-              <select id="ai-depth" ${aiBusyDisabled}>
-                ${[1, 2, 3, 4]
-                  .map(
-                    (depth) => `
-                      <option value="${depth}" ${
-                        depth === state.aiSettings.depth ? "selected" : ""
-                      }>${depth}</option>
-                    `,
-                  )
-                  .join("")}
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Beam Width</span>
-              <input id="ai-beam" type="number" min="4" max="96" step="1" value="${
-                state.aiSettings.beamWidth
-              }" ${aiBusyDisabled} />
-            </label>
-          </div>
-
-          <div class="button-row">
-            <button id="ai-analyze" class="soft" ${
-              state.gameOver || state.aiBusy ? "disabled" : ""
-            }>AI Analyze</button>
-            <button id="ai-move" class="accent" ${
-              state.gameOver || state.aiBusy ? "disabled" : ""
-            }>AI Move</button>
-            <button id="ai-run10" class="soft" ${
-              state.gameOver || state.aiBusy ? "disabled" : ""
-            }>AI x10</button>
-          </div>
-
-          <div class="button-row">
-            <button id="ai-export" class="soft" ${
-              state.aiDataset.length === 0 || state.aiBusy ? "disabled" : ""
-            }>Export Dataset</button>
-            <button id="ai-clear-log" class="soft" ${
-              state.aiDataset.length === 0 || state.aiBusy ? "disabled" : ""
-            }>Clear Dataset</button>
-          </div>
-
-          <div class="ai-note">
-            <span>dataset samples: ${state.aiDataset.length}</span>
-            <span>${
-              state.aiLastError ? `error: ${state.aiLastError}` : "探索結果はそのまま学習用 JSON に出力できます。"
-            }</span>
-          </div>
-
-          ${analysisMarkup(state)}
         </section>
 
         <section class="panel history-panel">

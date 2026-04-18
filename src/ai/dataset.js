@@ -33,6 +33,7 @@ export function createPolicyTrainingSample(snapshot, analysis) {
     createdAt: new Date().toISOString(),
     state: snapshot,
     search: {
+      objective: analysis.objective,
       settings: analysis.settings,
       expandedNodeCount: analysis.expandedNodeCount,
       candidateCount: analysis.candidateCount,

@@ -50,6 +50,8 @@ The right-side AI panel supports:
 - `AI Analyze`: search only and show the best move plus top candidates
 - `AI Move`: let the search AI play one move
 - `AI x10`: let the search AI play ten moves in sequence
+- `AI Run`: keep playing until stopped or topout
+- `Stop`: stop continuous execution after the current search finishes
 - `Export Dataset`: download the accumulated search records as JSON
 
 ## Test

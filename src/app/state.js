@@ -84,6 +84,7 @@ export function createGameState({
     aiAnalysis: null,
     aiDataset: [...existingAiDataset],
     aiAutoRunRemaining: 0,
+    aiContinuous: false,
     aiLastError: null,
   };
 }
