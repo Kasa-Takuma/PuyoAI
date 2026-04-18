@@ -227,6 +227,9 @@ export function renderApp(root, state) {
           <p class="hero-copy">
             配置ベースのぷよシミュレータ上で探索AIを動かし、その結果を後から学習データとして使えるようにしてあります。
           </p>
+          <div class="hero-actions">
+            <a class="link-chip" href="./batch.html">Batch Runner</a>
+          </div>
         </div>
         <div class="status-strip">
           <div class="stat">

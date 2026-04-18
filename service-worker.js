@@ -3,11 +3,14 @@ const CACHE_NAME = "puyoai-shell-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./batch.html",
   "./manifest.webmanifest",
   "./src/app/main.js",
   "./src/app/render.js",
   "./src/app/state.js",
   "./src/app/styles.css",
+  "./src/batch/main.js",
+  "./src/batch/render.js",
   "./src/core/constants.js",
   "./src/core/board.js",
   "./src/core/engine.js",
@@ -17,6 +20,7 @@ const APP_SHELL = [
   "./src/ai/search.js",
   "./src/ai/dataset.js",
   "./src/worker/ai-worker.js",
+  "./src/worker/batch-worker.js",
 ];
 
 self.addEventListener("install", (event) => {

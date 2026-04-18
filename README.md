@@ -24,6 +24,10 @@ Then open:
 
 This app is fully client-side. No backend server is required.
 
+For the headless parallel runner, open:
+
+`http://localhost:4173/batch.html`
+
 ## Deploy To GitHub Pages
 
 This repo already includes a GitHub Pages workflow:
@@ -53,6 +57,16 @@ The right-side AI panel supports:
 - `AI Run`: keep playing until stopped or topout
 - `Stop`: stop continuous execution after the current search finishes
 - `Export Dataset`: download the accumulated search records as JSON
+
+## Batch Runner
+
+The batch runner page is a field-less parallel execution mode.
+
+- choose `Parallel Count`, `Depth`, `Beam Width`, and `Seed Base`
+- `Start All`: launch all workers at once
+- `Stop All`: request all workers to stop together
+- each worker card shows current turn, score, max chains, worker total turns, and completed games
+- the summary panel shows total turns across all workers
 
 ## Test
 
