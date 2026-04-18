@@ -94,7 +94,7 @@ export function createChainFocusTrainingSample(
     triggerChains,
     triggerScore,
     offsetFromTrigger,
-    thresholdChains = 6,
+    thresholdChains = 10,
   },
 ) {
   return {

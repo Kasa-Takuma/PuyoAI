@@ -56,7 +56,17 @@ function summaryFromState(state) {
   };
 }
 
-function workerCardMarkup(worker) {
+function searchProfileOptions(selectedProfile) {
+  return SEARCH_PROFILES.map(
+    (profile) => `
+      <option value="${profile.id}" ${
+        profile.id === selectedProfile ? "selected" : ""
+      }>${profile.label}</option>
+    `,
+  ).join("");
+}
+
+function workerCardMarkup(worker, controlsDisabled) {
   return `
     <article class="worker-card">
       <div class="worker-head">
@@ -90,6 +100,13 @@ function workerCardMarkup(worker) {
         <span>completed games: ${worker.completedGames}</span>
         <span>overall best: ${worker.overallBestChain}</span>
       </div>
+
+      <label class="field worker-config-row">
+        Search Profile
+        <select data-worker-search-profile="${worker.id}" ${controlsDisabled}>
+          ${searchProfileOptions(worker.searchProfile)}
+        </select>
+      </label>
 
       <div class="rows-box">
         <span class="metric-label">Current Seed</span>
@@ -170,20 +187,17 @@ export function renderBatchApp(root, state) {
               }" ${controlsDisabled} />
             </label>
             <label class="field wide">
-              Search Profile
+              Bulk Search Profile
               <select id="batch-search-profile" ${controlsDisabled}>
-                ${SEARCH_PROFILES.map(
-                  (profile) => `
-                    <option value="${profile.id}" ${
-                      profile.id === state.aiSettings.searchProfile ? "selected" : ""
-                    }>${profile.label}</option>
-                  `,
-                ).join("")}
+                ${searchProfileOptions(state.aiSettings.searchProfile)}
               </select>
             </label>
           </div>
 
           <div class="button-row">
+            <button id="apply-search-profile-to-all" class="soft" ${
+              state.running ? "disabled" : ""
+            }>Apply Profile To All</button>
             <button id="start-all" class="accent" ${
               state.running ? "disabled" : ""
             }>Start All</button>
@@ -195,7 +209,7 @@ export function renderBatchApp(root, state) {
             }>Export Slim</button>
             <button id="export-chain-focus-dataset" class="soft" ${
               state.chainFocusDataset.length > 0 ? "" : "disabled"
-            }>Export 6+ Focus</button>
+            }>Export 10+ Focus</button>
             <button id="clear-batch-dataset" class="soft" ${
               state.slimDataset.length > 0 || state.chainFocusDataset.length > 0
                 ? ""
@@ -234,7 +248,7 @@ export function renderBatchApp(root, state) {
               <strong>${summary.slimDatasetSamples}</strong>
             </div>
             <div class="metric-card">
-              <span class="metric-label">6+ Focus Samples</span>
+              <span class="metric-label">10+ Focus Samples</span>
               <strong>${summary.chainFocusSamples}</strong>
             </div>
           </div>
@@ -249,7 +263,9 @@ export function renderBatchApp(root, state) {
           </div>
 
           <div class="worker-grid">
-            ${state.workers.map((worker) => workerCardMarkup(worker)).join("")}
+            ${state.workers
+              .map((worker) => workerCardMarkup(worker, controlsDisabled))
+              .join("")}
           </div>
         </section>
       </main>

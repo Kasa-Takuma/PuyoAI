@@ -242,14 +242,15 @@ test("chain focus sample includes trigger metadata", () => {
     workerId: 2,
     gameSeed: "batch:worker-2:game-5",
     triggerTurn: 9,
-    triggerChains: 6,
+    triggerChains: 10,
     triggerScore: 12400,
-    thresholdChains: 6,
+    thresholdChains: 10,
     offsetFromTrigger: -2,
   });
 
   assert.equal(sample.kind, "search_policy_chain_focus");
-  assert.equal(sample.focus.triggerChains, 6);
+  assert.equal(sample.focus.triggerChains, 10);
+  assert.equal(sample.focus.thresholdChains, 10);
   assert.equal(sample.focus.offsetFromTrigger, -2);
   assert.equal(sample.focus.gameSeed, "batch:worker-2:game-5");
 });

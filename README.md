@@ -65,10 +65,11 @@ The right-side AI panel supports:
 The batch runner page is a field-less parallel execution mode.
 
 - choose `Parallel Count`, `Depth`, `Beam Width`, and `Seed Base`
+- choose a `Bulk Search Profile`, or assign a different `Search Profile` to each worker
 - `Start All`: launch all workers at once
 - `Stop All`: request all workers to stop together
 - `Export Slim`: download all-turn lightweight policy samples
-- `Export 6+ Focus`: download full-detail samples from the 5 turns before and the trigger turn when a 6+ chain occurs
+- `Export 10+ Focus`: download full-detail samples from the 5 turns before and the trigger turn when a 10+ chain occurs
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
 - the summary panel shows total turns across all workers
 
@@ -89,7 +90,7 @@ pip install -r requirements-ml.txt
 ### 2. Export datasets from the app
 
 - use `Export Slim` on the batch runner to save all-turn policy samples
-- optionally use `Export 6+ Focus` to save detailed samples around 6-chain-or-larger triggers
+- optionally use `Export 10+ Focus` to save detailed samples around 10-chain-or-larger triggers
 
 ### 3. Train a learned policy
 

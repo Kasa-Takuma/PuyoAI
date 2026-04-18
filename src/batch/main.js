@@ -38,6 +38,7 @@ function normalizeAiSettings(settings) {
 function createWorkerSnapshot(id) {
   return {
     id,
+    searchProfile: DEFAULT_SEARCH_PROFILE_ID,
     status: "idle",
     turn: 0,
     score: 0,
@@ -52,6 +53,16 @@ function createWorkerSnapshot(id) {
   };
 }
 
+function createWorkerSnapshotWithProfile(id, searchProfile = DEFAULT_SEARCH_PROFILE_ID) {
+  return {
+    ...createWorkerSnapshot(id),
+    searchProfile:
+      typeof searchProfile === "string" && searchProfile.length > 0
+        ? searchProfile
+        : DEFAULT_SEARCH_PROFILE_ID,
+  };
+}
+
 function createBatchState() {
   const parallelCount = DEFAULT_PARALLEL_COUNT;
   return {
@@ -63,7 +74,7 @@ function createBatchState() {
     slimDataset: [],
     chainFocusDataset: [],
     workers: Array.from({ length: parallelCount }, (_, index) =>
-      createWorkerSnapshot(index + 1),
+      createWorkerSnapshotWithProfile(index + 1),
     ),
   };
 }
@@ -171,7 +182,10 @@ function syncWorkers() {
 
   state.workers = Array.from({ length: targetCount }, (_, index) => {
     const previous = state.workers.find((worker) => worker.id === index + 1);
-    return previous ?? createWorkerSnapshot(index + 1);
+    return (
+      previous ??
+      createWorkerSnapshotWithProfile(index + 1, state.aiSettings.searchProfile)
+    );
   });
 }
 
@@ -181,16 +195,22 @@ function startAllWorkers() {
   state.stopRequested = false;
   state.slimDataset = [];
   state.chainFocusDataset = [];
-  state.workers = state.workers.map((worker) => createWorkerSnapshot(worker.id));
+  state.workers = state.workers.map((worker) =>
+    createWorkerSnapshotWithProfile(worker.id, worker.searchProfile),
+  );
   rerender();
 
   for (const handle of workerHandles) {
+    const workerConfig = state.workers.find((worker) => worker.id === handle.id);
     handle.worker.postMessage({
       type: "start-batch",
       payload: {
         workerId: handle.id,
         seedBase: state.seedBase,
-        aiSettings: state.aiSettings,
+        aiSettings: normalizeAiSettings({
+          ...state.aiSettings,
+          searchProfile: workerConfig?.searchProfile ?? state.aiSettings.searchProfile,
+        }),
         presetId: "sandbox",
       },
     });
@@ -243,11 +263,41 @@ function bindEvents() {
   });
 
   document.querySelector("#batch-search-profile")?.addEventListener("change", (event) => {
-    state.aiSettings = normalizeAiSettings({
+    state.aiSettings = {
       ...state.aiSettings,
       searchProfile: event.target.value,
-    });
+    };
     rerender();
+  });
+
+  document
+    .querySelector("#apply-search-profile-to-all")
+    ?.addEventListener("click", () => {
+      if (state.running) {
+        return;
+      }
+      state.workers = state.workers.map((worker) => ({
+        ...worker,
+        searchProfile: state.aiSettings.searchProfile,
+      }));
+      rerender();
+    });
+
+  document.querySelectorAll("[data-worker-search-profile]").forEach((element) => {
+    element.addEventListener("change", (event) => {
+      if (state.running) {
+        return;
+      }
+      const workerId = Number.parseInt(event.target.dataset.workerSearchProfile, 10);
+      const worker = state.workers.find((entry) => entry.id === workerId);
+      if (!worker) {
+        return;
+      }
+      setWorkerSnapshot(workerId, {
+        searchProfile: event.target.value,
+      });
+      rerender();
+    });
   });
 
   document.querySelector("#start-all")?.addEventListener("click", () => {

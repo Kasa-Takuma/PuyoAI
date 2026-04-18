@@ -9,7 +9,7 @@ import { applyAction, createGameState } from "../app/state.js";
 let activeRunId = 0;
 let stopRequested = false;
 const DATASET_FLUSH_SIZE = 12;
-const CHAIN_FOCUS_THRESHOLD = 6;
+const CHAIN_FOCUS_THRESHOLD = 10;
 const CHAIN_FOCUS_WINDOW = 6;
 
 function nextTick() {
