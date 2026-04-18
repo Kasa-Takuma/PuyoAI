@@ -71,6 +71,7 @@ export function createGameState({
     nextQueue,
     turn: 1,
     totalScore: 0,
+    maxChains: 0,
     gameOver: false,
     lastResult: null,
     lastAction: null,
@@ -230,6 +231,7 @@ export function applyAction(state, action, source = "manual") {
 
   state.board = cloneBoard(result.finalBoard);
   state.totalScore += result.totalScore;
+  state.maxChains = Math.max(state.maxChains, result.totalChains);
   state.lastResult = result;
   state.lastAction = normalizedAction;
   state.history.unshift({

@@ -238,8 +238,8 @@ export function renderApp(root, state) {
             <strong>${state.totalScore}</strong>
           </div>
           <div class="stat">
-            <span class="stat-label">AI</span>
-            <strong>${aiStatusLabel(state)}</strong>
+            <span class="stat-label">Max Chains</span>
+            <strong>${state.maxChains}</strong>
           </div>
         </div>
       </header>
