@@ -49,6 +49,8 @@ function summaryFromState(state) {
     totalScore,
     bestChain,
     activeWorkers,
+    slimDatasetSamples: state.slimDataset.length,
+    chainFocusSamples: state.chainFocusDataset.length,
   };
 }
 
@@ -174,6 +176,17 @@ export function renderBatchApp(root, state) {
             <button id="stop-all" class="soft" ${
               state.running ? "" : "disabled"
             }>Stop All</button>
+            <button id="export-slim-dataset" class="soft" ${
+              state.slimDataset.length > 0 ? "" : "disabled"
+            }>Export Slim</button>
+            <button id="export-chain-focus-dataset" class="soft" ${
+              state.chainFocusDataset.length > 0 ? "" : "disabled"
+            }>Export 6+ Focus</button>
+            <button id="clear-batch-dataset" class="soft" ${
+              state.slimDataset.length > 0 || state.chainFocusDataset.length > 0
+                ? ""
+                : "disabled"
+            }>Clear Dataset</button>
           </div>
         </section>
 
@@ -201,6 +214,14 @@ export function renderBatchApp(root, state) {
             <div class="metric-card">
               <span class="metric-label">Best Chain Seen</span>
               <strong>${summary.bestChain}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Slim Samples</span>
+              <strong>${summary.slimDatasetSamples}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">6+ Focus Samples</span>
+              <strong>${summary.chainFocusSamples}</strong>
             </div>
           </div>
         </section>

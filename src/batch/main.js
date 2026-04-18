@@ -1,3 +1,8 @@
+import {
+  createChainFocusDatasetFilename,
+  createSlimDatasetFilename,
+  serializeAiDataset,
+} from "../ai/dataset.js";
 import { renderBatchApp } from "./render.js";
 
 const root = document.querySelector("#app");
@@ -50,6 +55,8 @@ function createBatchState() {
     aiSettings: { depth: 3, beamWidth: 24 },
     running: false,
     stopRequested: false,
+    slimDataset: [],
+    chainFocusDataset: [],
     workers: Array.from({ length: parallelCount }, (_, index) =>
       createWorkerSnapshot(index + 1),
     ),
@@ -81,6 +88,18 @@ function setWorkerSnapshot(workerId, patch) {
   );
 }
 
+function downloadTextFile(filename, content, mimeType = "application/json") {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function updateRunningFlag() {
   const hasActiveWorker = state.workers.some((worker) =>
     ["running", "game-over", "stop-requested"].includes(worker.status),
@@ -94,6 +113,19 @@ function updateRunningFlag() {
 
 function handleWorkerMessage(event) {
   const { type, workerId, ...payload } = event.data ?? {};
+
+  if (type === "batch-slim-dataset-chunk") {
+    state.slimDataset = state.slimDataset.concat(payload.samples ?? []);
+    scheduleRender();
+    return;
+  }
+
+  if (type === "batch-chain-focus-dataset-chunk") {
+    state.chainFocusDataset = state.chainFocusDataset.concat(payload.samples ?? []);
+    scheduleRender();
+    return;
+  }
+
   if (type !== "batch-update") {
     return;
   }
@@ -142,6 +174,8 @@ function startAllWorkers() {
   syncWorkers();
   state.running = true;
   state.stopRequested = false;
+  state.slimDataset = [];
+  state.chainFocusDataset = [];
   state.workers = state.workers.map((worker) => createWorkerSnapshot(worker.id));
   rerender();
 
@@ -215,6 +249,36 @@ function bindEvents() {
       return;
     }
     stopAllWorkers();
+  });
+
+  document.querySelector("#export-slim-dataset")?.addEventListener("click", () => {
+    if (state.slimDataset.length === 0) {
+      return;
+    }
+
+    downloadTextFile(
+      createSlimDatasetFilename(),
+      serializeAiDataset(state.slimDataset),
+      "application/json",
+    );
+  });
+
+  document.querySelector("#export-chain-focus-dataset")?.addEventListener("click", () => {
+    if (state.chainFocusDataset.length === 0) {
+      return;
+    }
+
+    downloadTextFile(
+      createChainFocusDatasetFilename(),
+      serializeAiDataset(state.chainFocusDataset),
+      "application/json",
+    );
+  });
+
+  document.querySelector("#clear-batch-dataset")?.addEventListener("click", () => {
+    state.slimDataset = [];
+    state.chainFocusDataset = [];
+    rerender();
   });
 }
 

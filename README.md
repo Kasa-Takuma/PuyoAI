@@ -65,6 +65,8 @@ The batch runner page is a field-less parallel execution mode.
 - choose `Parallel Count`, `Depth`, `Beam Width`, and `Seed Base`
 - `Start All`: launch all workers at once
 - `Stop All`: request all workers to stop together
+- `Export Slim`: download all-turn lightweight policy samples
+- `Export 6+ Focus`: download full-detail samples from the 5 turns before and the trigger turn when a 6+ chain occurs
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
 - the summary panel shows total turns across all workers
 

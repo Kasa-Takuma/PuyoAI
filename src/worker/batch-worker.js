@@ -1,8 +1,16 @@
 import { searchBestMove } from "../ai/search.js";
+import {
+  createAiSnapshot,
+  createChainFocusTrainingSample,
+  createSlimPolicyTrainingSample,
+} from "../ai/dataset.js";
 import { applyAction, createGameState } from "../app/state.js";
 
 let activeRunId = 0;
 let stopRequested = false;
+const DATASET_FLUSH_SIZE = 12;
+const CHAIN_FOCUS_THRESHOLD = 6;
+const CHAIN_FOCUS_WINDOW = 6;
 
 function nextTick() {
   return new Promise((resolve) => {
@@ -16,6 +24,19 @@ function postWorkerUpdate(workerId, payload) {
     workerId,
     ...payload,
   });
+}
+
+function flushDatasetChunk(workerId, type, datasetBuffer) {
+  if (datasetBuffer.length === 0) {
+    return [];
+  }
+
+  self.postMessage({
+    type,
+    workerId,
+    samples: datasetBuffer,
+  });
+  return [];
 }
 
 async function runBatchLoop({
@@ -33,6 +54,9 @@ async function runBatchLoop({
   let overallBestChain = 0;
   let currentState = null;
   let currentSeed = "";
+  let slimDatasetBuffer = [];
+  let chainFocusBuffer = [];
+  let recentDetailedTurns = [];
 
   while (!stopRequested && runId === activeRunId) {
     currentSeed = `${seedBase}:worker-${workerId}:game-${completedGames + 1}`;
@@ -57,16 +81,62 @@ async function runBatchLoop({
     });
 
     while (!stopRequested && runId === activeRunId && !currentState.gameOver) {
+      const snapshot = createAiSnapshot(currentState);
       const analysis = searchBestMove({
         board: currentState.board,
         currentPair: currentState.currentPair,
         nextQueue: currentState.nextQueue,
         settings: currentState.aiSettings,
       });
+      slimDatasetBuffer.push(createSlimPolicyTrainingSample(snapshot, analysis));
+      if (slimDatasetBuffer.length >= DATASET_FLUSH_SIZE) {
+        slimDatasetBuffer = flushDatasetChunk(
+          workerId,
+          "batch-slim-dataset-chunk",
+          slimDatasetBuffer,
+        );
+      }
 
-      applyAction(currentState, analysis.bestAction, "ai");
+      const result = applyAction(currentState, analysis.bestAction, "ai");
       totalTurns += 1;
       overallBestChain = Math.max(overallBestChain, currentState.maxChains);
+
+      recentDetailedTurns.push({
+        snapshot,
+        analysis,
+        result: {
+          totalChains: result.totalChains,
+          totalScore: result.totalScore,
+        },
+      });
+      if (recentDetailedTurns.length > CHAIN_FOCUS_WINDOW) {
+        recentDetailedTurns.shift();
+      }
+
+      if (result.totalChains >= CHAIN_FOCUS_THRESHOLD) {
+        const triggerTurn = snapshot.turn;
+        chainFocusBuffer.push(
+          ...recentDetailedTurns.map((entry) =>
+            createChainFocusTrainingSample(entry.snapshot, entry.analysis, {
+              workerId,
+              gameSeed: currentSeed,
+              triggerTurn,
+              triggerChains: result.totalChains,
+              triggerScore: result.totalScore,
+              thresholdChains: CHAIN_FOCUS_THRESHOLD,
+              offsetFromTrigger: entry.snapshot.turn - triggerTurn,
+            }),
+          ),
+        );
+
+        if (chainFocusBuffer.length >= DATASET_FLUSH_SIZE) {
+          chainFocusBuffer = flushDatasetChunk(
+            workerId,
+            "batch-chain-focus-dataset-chunk",
+            chainFocusBuffer,
+          );
+        }
+      }
 
       postWorkerUpdate(workerId, {
         status: currentState.gameOver ? "game-over" : "running",
@@ -91,6 +161,17 @@ async function runBatchLoop({
 
     completedGames += 1;
     overallBestChain = Math.max(overallBestChain, currentState.maxChains);
+    slimDatasetBuffer = flushDatasetChunk(
+      workerId,
+      "batch-slim-dataset-chunk",
+      slimDatasetBuffer,
+    );
+    chainFocusBuffer = flushDatasetChunk(
+      workerId,
+      "batch-chain-focus-dataset-chunk",
+      chainFocusBuffer,
+    );
+    recentDetailedTurns = [];
 
     postWorkerUpdate(workerId, {
       status: "running",
@@ -108,6 +189,17 @@ async function runBatchLoop({
 
     await nextTick();
   }
+
+  slimDatasetBuffer = flushDatasetChunk(
+    workerId,
+    "batch-slim-dataset-chunk",
+    slimDatasetBuffer,
+  );
+  chainFocusBuffer = flushDatasetChunk(
+    workerId,
+    "batch-chain-focus-dataset-chunk",
+    chainFocusBuffer,
+  );
 
   postWorkerUpdate(workerId, {
     status: "stopped",

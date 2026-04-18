@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createAiSnapshot, createPolicyTrainingSample } from "../src/ai/dataset.js";
+import {
+  createAiSnapshot,
+  createChainFocusTrainingSample,
+  createPolicyTrainingSample,
+  createSlimPolicyTrainingSample,
+} from "../src/ai/dataset.js";
 import { extractBoardFeatures } from "../src/ai/features.js";
 import { searchBestMove } from "../src/ai/search.js";
 import { boardFromRows } from "../src/core/board.js";
@@ -120,6 +125,102 @@ test("search analysis can be serialized into a training sample", () => {
   assert.equal(sample.candidates.length, analysis.candidates.length);
   assert.equal(sample.state.turn, 4);
   assert.equal(sample.search.settings.depth, 2);
+});
+
+test("slim policy sample keeps only lightweight supervision fields", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const nextQueue = [{ axis: COLORS.BLUE, child: COLORS.YELLOW }];
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { depth: 1, beamWidth: 24 },
+  });
+  const snapshot = createAiSnapshot({
+    presetId: "doubleChain",
+    seed: "slim-seed",
+    turn: 3,
+    totalScore: 0,
+    board,
+    currentPair,
+    nextQueue,
+  });
+
+  const sample = createSlimPolicyTrainingSample(snapshot, analysis);
+
+  assert.equal(sample.kind, "search_policy_slim");
+  assert.equal(sample.bestActionKey, analysis.bestActionKey);
+  assert.equal(sample.state.boardRows.length > 0, true);
+  assert.equal(Array.isArray(sample.topCandidates), true);
+  assert.equal("candidates" in sample, false);
+});
+
+test("chain focus sample includes trigger metadata", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24 },
+  });
+  const snapshot = createAiSnapshot({
+    presetId: "doubleChain",
+    seed: "focus-seed",
+    turn: 7,
+    totalScore: 320,
+    board,
+    currentPair,
+    nextQueue: [],
+  });
+
+  const sample = createChainFocusTrainingSample(snapshot, analysis, {
+    workerId: 2,
+    gameSeed: "batch:worker-2:game-5",
+    triggerTurn: 9,
+    triggerChains: 6,
+    triggerScore: 12400,
+    thresholdChains: 6,
+    offsetFromTrigger: -2,
+  });
+
+  assert.equal(sample.kind, "search_policy_chain_focus");
+  assert.equal(sample.focus.triggerChains, 6);
+  assert.equal(sample.focus.offsetFromTrigger, -2);
+  assert.equal(sample.focus.gameSeed, "batch:worker-2:game-5");
 });
 
 test("feature extraction sees the virtual double-chain trigger on the demo board", () => {

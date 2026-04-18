@@ -14,6 +14,13 @@ function cloneAction(action) {
   };
 }
 
+function cloneTopCandidates(candidates, limit = 3) {
+  return candidates.slice(0, limit).map((candidate) => ({
+    actionKey: candidate.actionKey,
+    searchScore: candidate.searchScore,
+  }));
+}
+
 export function createAiSnapshot(state) {
   return {
     presetId: state.presetId,
@@ -59,6 +66,52 @@ export function createPolicyTrainingSample(snapshot, analysis) {
   };
 }
 
+export function createSlimPolicyTrainingSample(snapshot, analysis) {
+  return {
+    kind: "search_policy_slim",
+    version: 1,
+    state: {
+      boardRows: [...snapshot.boardRows],
+      currentPair: clonePair(snapshot.currentPair),
+      nextQueue: snapshot.nextQueue.map((pair) => clonePair(pair)),
+    },
+    search: {
+      objective: analysis.objective,
+      settings: analysis.settings,
+    },
+    bestActionKey: analysis.bestActionKey,
+    topCandidates: cloneTopCandidates(analysis.candidates ?? []),
+  };
+}
+
+export function createChainFocusTrainingSample(
+  snapshot,
+  analysis,
+  {
+    workerId,
+    gameSeed,
+    triggerTurn,
+    triggerChains,
+    triggerScore,
+    offsetFromTrigger,
+    thresholdChains = 6,
+  },
+) {
+  return {
+    ...createPolicyTrainingSample(snapshot, analysis),
+    kind: "search_policy_chain_focus",
+    focus: {
+      workerId,
+      gameSeed,
+      triggerTurn,
+      triggerChains,
+      triggerScore,
+      thresholdChains,
+      offsetFromTrigger,
+    },
+  };
+}
+
 export function serializeAiDataset(dataset) {
   return JSON.stringify(dataset, null, 2);
 }
@@ -66,6 +119,16 @@ export function serializeAiDataset(dataset) {
 export function createDatasetFilename() {
   const iso = new Date().toISOString().replaceAll(":", "-");
   return `puyoai-search-dataset-${iso}.json`;
+}
+
+export function createSlimDatasetFilename() {
+  const iso = new Date().toISOString().replaceAll(":", "-");
+  return `puyoai-search-slim-${iso}.json`;
+}
+
+export function createChainFocusDatasetFilename() {
+  const iso = new Date().toISOString().replaceAll(":", "-");
+  return `puyoai-search-chain-focus-${iso}.json`;
 }
 
 export function summarizeBestAction(analysis) {
