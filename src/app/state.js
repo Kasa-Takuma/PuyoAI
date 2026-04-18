@@ -43,11 +43,16 @@ function normalizeAiSettings(aiSettings) {
   };
 }
 
+function normalizeAiMode(aiMode) {
+  return aiMode === "learned" ? "learned" : "search";
+}
+
 export function createGameState({
   presetId = "sandbox",
   seed = "puyoai",
   existingAiDataset = [],
   aiSettings = { depth: 3, beamWidth: 24 },
+  aiMode = "search",
 } = {}) {
   const preset = PRESETS[presetId] ?? PRESETS.sandbox;
   const normalizedSeed = normalizeSeed(seed);
@@ -79,6 +84,7 @@ export function createGameState({
     replayTimer: null,
     history: [],
     selectedAction,
+    aiMode: normalizeAiMode(aiMode),
     aiSettings: normalizeAiSettings(aiSettings),
     aiBusy: false,
     aiStatus: "idle",
@@ -108,6 +114,12 @@ export function setAiSetting(state, key, value) {
     [key]: value,
   };
   state.aiSettings = normalizeAiSettings(next);
+}
+
+export function setAiMode(state, aiMode) {
+  state.aiMode = normalizeAiMode(aiMode);
+  state.aiAnalysis = null;
+  state.aiLastError = null;
 }
 
 export function getReplayEvents(state) {
@@ -180,6 +192,7 @@ export function resetReplayToLatest(state) {
 
 export function createAiRequestPayload(state) {
   return {
+    mode: state.aiMode,
     board: cloneBoard(state.board),
     currentPair: clonePair(state.currentPair),
     nextQueue: cloneQueue(state.nextQueue),
@@ -197,7 +210,9 @@ export function recordAiAnalysis(state, snapshot, analysis) {
     ...analysis,
   };
   state.aiLastError = null;
-  state.aiDataset.unshift(createPolicyTrainingSample(snapshot, analysis));
+  if (analysis.kind !== "learned") {
+    state.aiDataset.unshift(createPolicyTrainingSample(snapshot, analysis));
+  }
 }
 
 export function clearAiDataset(state) {

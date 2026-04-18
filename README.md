@@ -9,6 +9,8 @@ Browser-based Puyo Puyo simulator and replay viewer aimed at a PPT2-like solo ru
 - manual placement and random play
 - search AI with configurable depth and beam width
 - exportable search dataset for later learning experiments
+- Python training toolkit for a separate learned policy baseline
+- browser-usable learned policy mode on the normal viewer page
 
 ## Run
 
@@ -70,8 +72,99 @@ The batch runner page is a field-less parallel execution mode.
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
 - the summary panel shows total turns across all workers
 
+## Learned Policy Training
+
+The search AI remains the main baseline. The `training/` package is a separate supervised-learning pipeline that imitates search outputs from exported datasets.
+
+### 1. Prepare a Python environment
+
+On Apple Silicon, the scripts will automatically prefer `mps` if your PyTorch build supports it.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-ml.txt
+```
+
+### 2. Export datasets from the app
+
+- use `Export Slim` on the batch runner to save all-turn policy samples
+- optionally use `Export 6+ Focus` to save detailed samples around 6-chain-or-larger triggers
+
+### 3. Train a learned policy
+
+Run training from the repository root with module syntax:
+
+```bash
+python3 -m training.train_policy \
+  --slim /path/to/puyoai-search-slim.json \
+  --focus /path/to/puyoai-search-chain-focus.json \
+  --output models/policy_mlp.pt
+```
+
+Useful knobs:
+
+- `--epochs 12`
+- `--batch-size 256`
+- `--focus-weight 2.0`
+- `--distill-weight 0.2`
+- `--device auto|mps|cpu|cuda`
+
+The trainer prints one JSON line per epoch and saves the checkpoint with the best validation top-1 accuracy.
+
+### 4. Evaluate a checkpoint
+
+```bash
+python3 -m training.evaluate_policy \
+  --checkpoint models/policy_mlp.pt \
+  --slim /path/to/puyoai-search-slim.json \
+  --focus /path/to/puyoai-search-chain-focus.json
+```
+
+This reports combined, slim-only, and focus-only top-1/top-3 metrics.
+
+### 5. Inspect one sample
+
+```bash
+python3 -m training.predict_policy \
+  --checkpoint models/policy_mlp.pt \
+  --input /path/to/puyoai-search-slim.json \
+  --index 0
+```
+
+`predict_policy` also accepts a single JSON object shaped like either:
+
+- an exported sample with `state` and `bestActionKey`
+- a wrapper with `state`
+- a raw state object with `boardRows`, `currentPair`, and `nextQueue`
+
+The learned policy is intentionally separate from the search AI so both can coexist in this repository and be compared later.
+
+### 6. Export for the web viewer
+
+After training, convert the `.pt` checkpoint into the JSON asset used by the browser:
+
+```bash
+python3 -m training.export_web_policy \
+  --checkpoint models/policy_mlp.pt \
+  --output models/policy_mlp.web.json
+```
+
+Once `models/policy_mlp.web.json` exists, the normal viewer page can switch between:
+
+- `Search`: the original beam-search AI
+- `Learned`: the exported MLP policy
+
+Open `http://localhost:4173`, change `AI Mode` to `Learned`, and then use `AI Move` / `AI Run` to watch the learned policy stack on the same field UI.
+
 ## Test
 
 ```bash
 node --test
+```
+
+For the Python-side scripts, a lightweight syntax check is:
+
+```bash
+python3 -m compileall training
 ```

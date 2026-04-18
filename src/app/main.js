@@ -1,4 +1,5 @@
 import { createDatasetFilename, serializeAiDataset } from "../ai/dataset.js";
+import { analyzeLearnedMove } from "../ai/learned.js";
 import { searchBestMove } from "../ai/search.js";
 import { renderApp } from "./render.js";
 import {
@@ -13,6 +14,7 @@ import {
   createGameState,
   recordAiAnalysis,
   resetReplayToLatest,
+  setAiMode,
   setAiError,
   setAiSetting,
   setAiStatus,
@@ -37,6 +39,7 @@ function retainedGameOptions() {
   return {
     existingAiDataset: state.aiDataset,
     aiSettings: state.aiSettings,
+    aiMode: state.aiMode,
   };
 }
 
@@ -74,7 +77,11 @@ function finalizeAiAnalysis(requestId, analysis) {
 
   if (pending.applyMove && analysis.bestAction) {
     state.selectedAction = analysis.bestActionKey;
-    applyAction(state, analysis.bestAction, "ai");
+    applyAction(
+      state,
+      analysis.bestAction,
+      analysis.kind === "learned" ? "learned" : "ai",
+    );
   }
 
   setAiStatus(state, pending.autoRun ? "auto-ready" : "ready", false);
@@ -132,8 +139,20 @@ function requestAiAnalysis({ applyMove = false, autoRun = false } = {}) {
 
   window.setTimeout(() => {
     try {
-      const analysis = searchBestMove(payload);
-      finalizeAiAnalysis(requestId, analysis);
+      const work =
+        payload.mode === "learned"
+          ? analyzeLearnedMove(payload)
+          : Promise.resolve(searchBestMove(payload));
+      work
+        .then((analysis) => {
+          finalizeAiAnalysis(requestId, analysis);
+        })
+        .catch((error) => {
+          failAiAnalysis(
+            requestId,
+            error instanceof Error ? error.message : String(error),
+          );
+        });
     } catch (error) {
       failAiAnalysis(
         requestId,
@@ -249,6 +268,12 @@ function bindEvents() {
 
   document.querySelector("#ai-depth")?.addEventListener("change", (event) => {
     setAiSetting(state, "depth", event.target.value);
+    rerender();
+  });
+
+  document.querySelector("#ai-mode")?.addEventListener("change", (event) => {
+    stopAiLoop();
+    setAiMode(state, event.target.value);
     rerender();
   });
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "puyoai-shell-v2";
+const CACHE_NAME = "puyoai-shell-v3";
 
 const APP_SHELL = [
   "./",
@@ -17,8 +17,11 @@ const APP_SHELL = [
   "./src/core/presets.js",
   "./src/core/randomizer.js",
   "./src/ai/features.js",
+  "./src/ai/action-vocab.js",
+  "./src/ai/learned.js",
   "./src/ai/search.js",
   "./src/ai/dataset.js",
+  "./models/policy_mlp.web.json",
   "./src/worker/ai-worker.js",
   "./src/worker/batch-worker.js",
 ];

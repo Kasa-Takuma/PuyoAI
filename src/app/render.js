@@ -66,6 +66,8 @@ function actionLabel(action, pair) {
 
 function sourceLabel(source) {
   switch (source) {
+    case "learned":
+      return "Learned";
     case "ai":
       return "AI";
     case "random":
@@ -73,6 +75,10 @@ function sourceLabel(source) {
     default:
       return "Manual";
   }
+}
+
+function aiModeLabel(aiMode) {
+  return aiMode === "learned" ? "Learned AI" : "Search AI";
 }
 
 function aiStatusLabel(state) {
@@ -131,6 +137,30 @@ function candidateMarkup(analysis) {
     return `<p class="empty-copy">まだ探索結果がありません。</p>`;
   }
 
+  if (analysis.kind === "learned") {
+    return `
+      <ol class="candidate-list">
+        ${analysis.candidates
+          .slice(0, 5)
+          .map(
+            (candidate, index) => `
+              <li class="candidate-item ${
+                candidate.actionKey === analysis.bestActionKey ? "best" : ""
+              }">
+                <div class="candidate-rank">#${index + 1}</div>
+                <div class="candidate-body">
+                  <strong>${actionLabel(candidate.action)}</strong>
+                  <span>確率 ${(candidate.probability * 100).toFixed(2)}%</span>
+                  <span>logit ${candidate.logit.toFixed(3)}</span>
+                </div>
+              </li>
+            `,
+          )
+          .join("")}
+      </ol>
+    `;
+  }
+
   return `
     <ol class="candidate-list">
       ${analysis.candidates
@@ -163,8 +193,42 @@ function analysisMarkup(state) {
   if (!analysis) {
     return `
       <p class="empty-copy">
-        「AI Analyze」または「AI Move」で探索結果をここに表示します。
+        「AI Analyze」または「AI Move」で ${aiModeLabel(state.aiMode)} の結果をここに表示します。
       </p>
+    `;
+  }
+
+  if (analysis.kind === "learned") {
+    return `
+      <div class="analysis-head">
+        <div class="metric-card">
+          <span class="metric-label">Objective</span>
+          <strong>${analysis.objective}</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Best Action</span>
+          <strong>${summarizeBestAction(analysis)}</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Confidence</span>
+          <strong>${(analysis.bestScore * 100).toFixed(2)}%</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Model</span>
+          <strong>${analysis.modelName}</strong>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Elapsed</span>
+          <strong>${analysis.elapsedMs.toFixed(1)} ms</strong>
+        </div>
+      </div>
+
+      <div class="analysis-note">
+        <span>turn ${analysis.snapshot.turn} の盤面に対する learned policy の結果です。</span>
+        <span>input dim: ${analysis.inputDim}</span>
+      </div>
+
+      ${candidateMarkup(analysis)}
     `;
   }
 
@@ -217,6 +281,8 @@ export function renderApp(root, state) {
     })
     .join("");
   const aiBusyDisabled = state.aiBusy ? "disabled" : "";
+  const aiSettingsDisabled =
+    state.aiBusy || state.aiMode === "learned" ? "disabled" : "";
 
   root.innerHTML = `
     <div class="shell">
@@ -302,7 +368,7 @@ export function renderApp(root, state) {
         <section class="panel ai-panel">
           <div class="panel-head">
             <div>
-              <p class="panel-kicker">Search AI</p>
+              <p class="panel-kicker">${aiModeLabel(state.aiMode)}</p>
               <h2>Planner</h2>
             </div>
             <div class="event-pill ${state.aiBusy ? "clear" : "idle"}">
@@ -312,8 +378,16 @@ export function renderApp(root, state) {
 
           <div class="control-grid ai-grid">
             <label class="field">
+              <span>AI Mode</span>
+              <select id="ai-mode" ${aiBusyDisabled}>
+                <option value="search" ${state.aiMode === "search" ? "selected" : ""}>Search</option>
+                <option value="learned" ${state.aiMode === "learned" ? "selected" : ""}>Learned</option>
+              </select>
+            </label>
+
+            <label class="field">
               <span>Depth</span>
-              <select id="ai-depth" ${aiBusyDisabled}>
+              <select id="ai-depth" ${aiSettingsDisabled}>
                 ${[1, 2, 3, 4]
                   .map(
                     (depth) => `
@@ -330,7 +404,7 @@ export function renderApp(root, state) {
               <span>Beam Width</span>
               <input id="ai-beam" type="number" min="4" max="96" step="1" value="${
                 state.aiSettings.beamWidth
-              }" ${aiBusyDisabled} />
+              }" ${aiSettingsDisabled} />
             </label>
           </div>
 
@@ -370,7 +444,11 @@ export function renderApp(root, state) {
           <div class="ai-note">
             <span>dataset samples: ${state.aiDataset.length}</span>
             <span>${
-              state.aiLastError ? `error: ${state.aiLastError}` : "探索結果はそのまま学習用 JSON に出力できます。"
+              state.aiLastError
+                ? `error: ${state.aiLastError}`
+                : state.aiMode === "learned"
+                  ? "learned mode は保存済み MLP をそのまま推論に使います。"
+                  : "探索結果はそのまま学習用 JSON に出力できます。"
             }</span>
           </div>
 
