@@ -1,4 +1,4 @@
-const CACHE_NAME = "puyoai-shell-v1";
+const CACHE_NAME = "puyoai-shell-v2";
 
 const APP_SHELL = [
   "./",
@@ -21,7 +21,10 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(APP_SHELL))
+      .then(() => self.skipWaiting()),
   );
 });
 
@@ -29,12 +32,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key)),
+        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)),
       ),
     ),
   );
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -43,12 +45,8 @@ self.addEventListener("fetch", (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) {
-        return cached;
-      }
-
-      return fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         if (!response || response.status !== 200 || response.type !== "basic") {
           return response;
         }
@@ -58,7 +56,7 @@ self.addEventListener("fetch", (event) => {
           cache.put(event.request, responseClone);
         });
         return response;
-      });
-    }),
+      })
+      .catch(() => caches.match(event.request)),
   );
 });
