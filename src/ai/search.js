@@ -82,6 +82,26 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
     singleChainPenalty: -310,
     singleScoreScale: 0.09,
   }),
+  chain_builder_v7: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 950,
+    chainExponent: 3.2,
+    scoreScale: 0.82,
+    singleChainPenalty: -320,
+    singleScoreScale: 0.085,
+  }),
+  chain_builder_v7a: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 860,
+    chainExponent: 3.28,
+    scoreScale: 0.84,
+    singleChainPenalty: -360,
+    singleScoreScale: 0.07,
+    midChainPenalty: -55_000,
+    tenPlusBonus: 135_000,
+    elevenPlusBonus: 100_000,
+    twelvePlusBonus: 140_000,
+  }),
 });
 
 function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
@@ -104,7 +124,24 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
     weights.chainValueBase * result.totalChains ** weights.chainExponent;
   const scoreValue = result.totalScore * weights.scoreScale;
   const allClearBonus = result.allClear ? weights.allClearBonus : 0;
-  return chainValue + scoreValue + allClearBonus;
+  const midChainPenalty =
+    result.totalChains >= 7 && result.totalChains <= 9
+      ? weights.midChainPenalty ?? 0
+      : 0;
+  const tenPlusBonus = result.totalChains >= 10 ? weights.tenPlusBonus ?? 0 : 0;
+  const elevenPlusBonus =
+    result.totalChains >= 11 ? weights.elevenPlusBonus ?? 0 : 0;
+  const twelvePlusBonus =
+    result.totalChains >= 12 ? weights.twelvePlusBonus ?? 0 : 0;
+  return (
+    chainValue +
+    scoreValue +
+    allClearBonus +
+    midChainPenalty +
+    tenPlusBonus +
+    elevenPlusBonus +
+    twelvePlusBonus
+  );
 }
 
 function createExpandedNode(node, pair, action, layerIndex, profileId) {
