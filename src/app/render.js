@@ -84,6 +84,15 @@ function aiModeLabel(aiMode) {
   return aiMode === "learned" ? "Learned AI" : "Search AI";
 }
 
+function valueAssistLabel(state) {
+  if (state.aiMode !== "search") {
+    return "inactive";
+  }
+  return state.aiSettings.useValueModel
+    ? `on / weight ${state.aiSettings.valueWeight}`
+    : "off";
+}
+
 function selectedLearnedModelLabel(state) {
   return (
     state.learnedModels.find((model) => model.id === state.selectedLearnedModelId)?.label ??
@@ -188,6 +197,11 @@ function candidateMarkup(analysis) {
                 <span>探索値 ${Math.round(candidate.searchScore)} / 即時 ${
                   candidate.immediateScore
                 } / ${candidate.bestDepth} 手読み</span>
+                ${
+                  candidate.valuePrediction
+                    ? `<span>value ${Math.round(candidate.valueScore)} / 予測最大 ${candidate.valuePrediction.maxChain.toFixed(1)}連鎖</span>`
+                    : ""
+                }
                 <span>line: ${candidate.line
                   .map((action) => `${action.orientation}:${action.column + 1}`)
                   .join(" -> ")}</span>
@@ -258,6 +272,16 @@ function analysisMarkup(state) {
         <span class="metric-label">Search Score</span>
         <strong>${Math.round(analysis.bestScore)}</strong>
       </div>
+      ${
+        analysis.valueAssist
+          ? `
+            <div class="metric-card">
+              <span class="metric-label">Value Assist</span>
+              <strong>${analysis.valueAssist.modelName}</strong>
+            </div>
+          `
+          : ""
+      }
       <div class="metric-card">
         <span class="metric-label">Expanded</span>
         <strong>${analysis.expandedNodeCount}</strong>
@@ -270,7 +294,7 @@ function analysisMarkup(state) {
 
     <div class="analysis-note">
       <span>turn ${analysis.snapshot.turn} の盤面に対する探索結果です。</span>
-      <span>dataset sample: ${state.aiDataset.length}</span>
+      <span>dataset sample: ${state.aiDataset.length} / value assist: ${valueAssistLabel(state)}</span>
     </div>
 
     ${candidateMarkup(analysis)}
@@ -457,6 +481,25 @@ export function renderApp(root, state) {
                 ).join("")}
               </select>
             </label>
+
+            <label class="field">
+              <span>Value Assist</span>
+              <select id="ai-use-value" ${aiSettingsDisabled}>
+                <option value="false" ${
+                  state.aiSettings.useValueModel ? "" : "selected"
+                }>Off</option>
+                <option value="true" ${
+                  state.aiSettings.useValueModel ? "selected" : ""
+                }>On</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Value Weight</span>
+              <input id="ai-value-weight" type="number" min="0" max="1000000" step="10000" value="${
+                state.aiSettings.valueWeight
+              }" ${aiSettingsDisabled} />
+            </label>
           </div>
 
           <div class="button-row">
@@ -503,7 +546,9 @@ export function renderApp(root, state) {
                 ? `error: ${state.aiLastError}`
                 : state.aiMode === "learned"
                   ? "learned mode は保存済み MLP をそのまま推論に使います。"
-                  : "探索結果はそのまま学習用 JSON に出力できます。"
+                  : state.aiSettings.useValueModel
+                    ? "value assist は探索の葉評価に value_mlp の未来価値を加算します。"
+                    : "探索結果はそのまま学習用 JSON に出力できます。"
             }</span>
           </div>
 

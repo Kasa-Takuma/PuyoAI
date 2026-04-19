@@ -9,6 +9,7 @@ Browser-based Puyo Puyo simulator and replay viewer aimed at a PPT2-like solo ru
 - chain replay viewer
 - manual placement and random play
 - search AI with configurable depth and beam width
+- optional value-assisted search that mixes a streamed value model into leaf evaluation
 - exportable search dataset for later learning experiments
 - Python training toolkit for a separate learned policy baseline
 - browser-usable learned policy mode on the normal viewer page
@@ -60,6 +61,7 @@ The right-side AI panel supports:
 - `AI Run`: keep playing until stopped or topout
 - `Stop`: stop continuous execution after the current search finishes
 - `Export Dataset`: download the accumulated search records as JSON
+- `Value Assist`: in Search mode, add the exported `value_mlp` prediction to the search leaf score
 
 ## Batch Runner
 
@@ -206,6 +208,66 @@ This sequentially:
 - writes `models/manifest.json` for the web viewer
 
 After that, the normal viewer can switch among multiple learned models with the `Learned Model` selector.
+
+## Streaming Value Training
+
+For larger value-function runs, avoid browser downloads. The CLI can generate
+search-value samples and train from the stream without holding a giant JSON file
+in memory.
+
+```bash
+python3 -m training.train_value_stream \
+  --turns 300000 \
+  --games 30 \
+  --workers 2 \
+  --depth 3 \
+  --beam-width 16 \
+  --search-profile chain_builder_v11 \
+  --output models/value_mlp.pt
+```
+
+This launches `tools/generate-value-stream.js`, which writes one `search_value`
+JSON object per line. Python reads those lines immediately, keeps only a bounded
+replay buffer, and saves the trained value checkpoint. The default target uses
+the 48-turn future label, while the stream also carries 12- and 24-turn labels.
+During long runs, `models/value_mlp.pt` is saved at every `--save-every`
+interval, while `models/value_mlp.best.pt` is updated only when validation loss
+improves.
+`--workers` starts parallel Node generators and splits `--turns` across them, so
+`--turns 300000 --workers 2` means about 150,000 turns per generator and
+300,000 turns total.
+To continue training from an existing value checkpoint, pass `--resume` and use
+a new seed to avoid replaying the same deterministic sequence:
+
+```bash
+python3 -m training.train_value_stream \
+  --turns 300000 \
+  --games 30 \
+  --workers 2 \
+  --depth 3 \
+  --beam-width 16 \
+  --search-profile chain_builder_v11 \
+  --seed value-stream-2 \
+  --resume models/value_mlp.pt \
+  --output models/value_mlp.pt
+```
+
+If you only want to inspect or archive the stream manually:
+
+```bash
+npm run generate:value -- --turns 10000 --games 5 > log/value-sample.jsonl
+```
+
+After training, export the latest checkpoint for the browser:
+
+```bash
+npm run export:value
+```
+
+Then open the normal viewer, keep `AI Mode` as `Search`, set `Value Assist` to
+`On`, and compare against the same search profile with `Value Assist` off. The
+default `Value Weight` is intentionally conservative; raise it only after a
+benchmark shows the value-assisted search is better.
 
 ## Test
 

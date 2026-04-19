@@ -13,6 +13,7 @@ import {
   createAiSnapshot,
   createPolicyTrainingSample,
 } from "../ai/dataset.js";
+import { normalizeValueAssistSettings } from "../ai/value.js";
 
 function clonePair(pair) {
   return { axis: pair.axis, child: pair.child };
@@ -47,6 +48,7 @@ function deriveGameSeed(seedBase, seedOffset) {
 }
 
 function normalizeAiSettings(aiSettings) {
+  const valueAssist = normalizeValueAssistSettings(aiSettings);
   return {
     depth: Math.max(1, Math.min(4, Number.parseInt(aiSettings?.depth, 10) || 3)),
     beamWidth: Math.max(
@@ -57,6 +59,8 @@ function normalizeAiSettings(aiSettings) {
       typeof aiSettings?.searchProfile === "string" && aiSettings.searchProfile.length > 0
         ? aiSettings.searchProfile
         : DEFAULT_SEARCH_PROFILE_ID,
+    useValueModel: valueAssist.useValueModel,
+    valueWeight: valueAssist.valueWeight,
   };
 }
 
@@ -276,6 +280,8 @@ export function createAiRequestPayload(state) {
     currentPair: clonePair(state.currentPair),
     nextQueue: cloneQueue(state.nextQueue),
     settings: { ...state.aiSettings },
+    turn: state.turn,
+    totalScore: state.totalScore,
   };
 }
 

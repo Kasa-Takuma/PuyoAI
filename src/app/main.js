@@ -1,6 +1,7 @@
 import { createDatasetFilename, serializeAiDataset } from "../ai/dataset.js";
 import { analyzeLearnedMove, loadLearnedModelManifest } from "../ai/learned.js";
 import { searchBestMove } from "../ai/search.js";
+import { loadSearchValueModel } from "../ai/value.js";
 import { renderApp } from "./render.js";
 import {
   applyAction,
@@ -188,7 +189,11 @@ function requestAiAnalysis({ applyMove = false, autoRun = false } = {}) {
       const work =
         payload.mode === "learned"
           ? analyzeLearnedMove(payload)
-          : Promise.resolve(searchBestMove(payload));
+          : payload.settings?.useValueModel
+            ? loadSearchValueModel().then((valueModel) =>
+                searchBestMove({ ...payload, valueModel }),
+              )
+            : Promise.resolve(searchBestMove(payload));
       work
         .then((analysis) => {
           finalizeAiAnalysis(requestId, analysis);
@@ -338,6 +343,16 @@ function bindEvents() {
 
   document.querySelector("#ai-search-profile")?.addEventListener("change", (event) => {
     setAiSetting(state, "searchProfile", event.target.value);
+    rerender();
+  });
+
+  document.querySelector("#ai-use-value")?.addEventListener("change", (event) => {
+    setAiSetting(state, "useValueModel", event.target.value);
+    rerender();
+  });
+
+  document.querySelector("#ai-value-weight")?.addEventListener("change", (event) => {
+    setAiSetting(state, "valueWeight", event.target.value);
     rerender();
   });
 

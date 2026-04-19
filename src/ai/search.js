@@ -5,6 +5,7 @@ import {
   featuresToVector,
   scoreBoardFeatures,
 } from "./features.js";
+import { evaluateValueModel, normalizeValueAssistSettings } from "./value.js";
 import {
   DEFAULT_SEARCH_PROFILE_ID,
   getSearchProfile,
@@ -63,11 +64,14 @@ function normalizeSettings(settings = {}) {
   const normalizedProfile = getSearchProfile(
     profileConfig?.baseProfileId ?? requestedProfileId,
   );
+  const valueAssist = normalizeValueAssistSettings(settings);
 
   const normalizedSettings = {
     depth: clampDepth(settings.depth ?? 3),
     beamWidth: clampBeamWidth(settings.beamWidth ?? 24),
     searchProfile: profileConfig?.id ?? normalizedProfile.id,
+    useValueModel: valueAssist.useValueModel,
+    valueWeight: valueAssist.valueWeight,
   };
   if (profileConfig) {
     normalizedSettings.baseSearchProfile = normalizedProfile.id;
@@ -392,6 +396,7 @@ function createExpandedNode(node, pair, action, layerIndex, profileId, profileCo
     profileConfig,
   );
   const cumulativeValue = node.cumulativeValue + turnValue;
+  const projectedScore = node.projectedScore + result.totalScore;
   const searchScore = cumulativeValue + heuristicScore;
   const rootAction = node.rootAction ?? cloneAction(action);
   const rootKey = node.rootKey ?? encodeAction(action);
@@ -412,6 +417,7 @@ function createExpandedNode(node, pair, action, layerIndex, profileId, profileCo
     rootTurn,
     path,
     cumulativeValue,
+    projectedScore,
     searchScore,
     heuristicScore,
     bestDepth: layerIndex + 1,
@@ -421,7 +427,21 @@ function createExpandedNode(node, pair, action, layerIndex, profileId, profileCo
   };
 }
 
-function createCandidate(node) {
+function createLeafState({ node, currentPair, nextQueue, turn, totalScore }) {
+  const depth = Math.max(1, node.bestDepth);
+  const nextCurrentPair = nextQueue[depth - 1] ?? currentPair;
+  const nextQueueAfter = nextQueue.slice(depth);
+
+  return {
+    board: node.board,
+    currentPair: nextCurrentPair,
+    nextQueue: nextQueueAfter,
+    turn: turn + depth,
+    totalScore: totalScore + node.projectedScore,
+  };
+}
+
+function createCandidate(node, rootContext) {
   const refinedFeatures = extractBoardFeatures(node.board, {
     includeVirtualChains: true,
   });
@@ -430,7 +450,23 @@ function createCandidate(node) {
     node.profileId,
     node.profileConfig,
   );
-  const searchScore = node.cumulativeValue + heuristicScore;
+  const valuePrediction = rootContext.valueModel
+    ? evaluateValueModel({
+        model: rootContext.valueModel,
+        ...createLeafState({
+          node,
+          currentPair: rootContext.currentPair,
+          nextQueue: rootContext.nextQueue,
+          turn: rootContext.turn,
+          totalScore: rootContext.totalScore,
+        }),
+        features: refinedFeatures,
+      })
+    : null;
+  const valueScore = valuePrediction
+    ? valuePrediction.objective * rootContext.valueWeight
+    : 0;
+  const searchScore = node.cumulativeValue + heuristicScore + valueScore;
 
   return {
     action: cloneAction(node.rootAction),
@@ -438,6 +474,8 @@ function createCandidate(node) {
     searchScore,
     cumulativeValue: node.cumulativeValue,
     heuristicScore,
+    valueScore,
+    valuePrediction,
     immediateScore: node.rootTurn.score,
     immediateChains: node.rootTurn.chains,
     immediateTopout: node.rootTurn.topout,
@@ -455,11 +493,20 @@ function createCandidate(node) {
   };
 }
 
-export function searchBestMove({ board, currentPair, nextQueue = [], settings = {} }) {
+export function searchBestMove({
+  board,
+  currentPair,
+  nextQueue = [],
+  settings = {},
+  turn = 1,
+  totalScore = 0,
+  valueModel = null,
+}) {
   const startedAt = performance.now();
   const normalizedSettings = normalizeSettings(settings);
   const profileId = normalizedSettings.searchProfile;
   const profileConfig = normalizedSettings.profileConfig;
+  const activeValueModel = normalizedSettings.useValueModel ? valueModel : null;
   const candidatePools = new Map();
   const rootActions = enumerateLegalActions(board, currentPair);
 
@@ -475,6 +522,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
         rootTurn: null,
         path: [],
         cumulativeValue: 0,
+        projectedScore: 0,
         expandedNodes: 0,
       },
       currentPair,
@@ -527,7 +575,16 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
   const candidates = [...candidatePools.values()]
     .map((nodes) =>
       nodes
-        .map((node) => createCandidate(node))
+        .map((node) =>
+          createCandidate(node, {
+            currentPair,
+            nextQueue,
+            turn,
+            totalScore,
+            valueModel: activeValueModel,
+            valueWeight: normalizedSettings.valueWeight,
+          }),
+        )
         .sort((left, right) => right.searchScore - left.searchScore)[0],
     )
     .sort(
@@ -538,8 +595,16 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
   const elapsedMs = performance.now() - startedAt;
 
   return {
+    kind: activeValueModel ? "search_value_assisted" : "search",
     objective: profileId,
     settings: normalizedSettings,
+    valueAssist: activeValueModel
+      ? {
+          modelName: activeValueModel.name ?? "value_mlp",
+          targetHorizon: activeValueModel.targetHorizon ?? 48,
+          weight: normalizedSettings.valueWeight,
+        }
+      : null,
     bestAction,
     bestActionKey: bestAction ? encodeAction(bestAction) : null,
     bestScore,
