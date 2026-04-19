@@ -34,6 +34,16 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v8",
     description: "Builds on v7a with stronger anti-small-fire penalties while preserving cleanup moves that lead to 10+ potential.",
   },
+  {
+    id: "chain_builder_v9",
+    label: "Chain Builder v9",
+    description: "Pushes v8 toward steadier 11-12 chains by making 7-9 fires less attractive and rewarding mature 11+ boards.",
+  },
+  {
+    id: "chain_builder_v9a",
+    label: "Chain Builder v9a",
+    description: "Focus-tuned 11+ profile that rewards the mature high-stack patterns seen before v8's 11-12 chains.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;
