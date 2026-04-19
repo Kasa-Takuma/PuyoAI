@@ -49,6 +49,20 @@ select {
   padding: 28px 0 40px;
 }
 
+.version-bar {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  margin: 0 0 10px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(43, 32, 24, 0.78);
+  color: #fff8ed;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
 .hero {
   display: flex;
   justify-content: space-between;

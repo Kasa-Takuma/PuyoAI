@@ -1,4 +1,5 @@
 import { SEARCH_PROFILES } from "../ai/search-profiles.js";
+import { APP_VERSION } from "../app/version.js";
 
 const HIGH_CHAIN_THRESHOLD = 7;
 
@@ -183,6 +184,7 @@ export function renderBatchApp(root, state) {
 
   root.innerHTML = `
     <div class="shell">
+      <div class="version-bar">PuyoAI ${APP_VERSION}</div>
       <header class="hero">
         <div>
           <p class="eyebrow">Headless Parallel Runner</p>

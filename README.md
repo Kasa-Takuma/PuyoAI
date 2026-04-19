@@ -73,6 +73,7 @@ The batch runner page is a field-less parallel execution mode.
 - `Export Benchmark`: download a compact benchmark summary with per-profile totals, per-worker totals, and 7+ chain events
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
 - the summary panel shows total turns across all workers and a compact 7+ chain histogram
+- benchmark exports include lightweight pre-fire features for 7+ chain events, plus bucket/profile aggregate averages for evaluation tuning
 
 ## Learned Policy Training
 

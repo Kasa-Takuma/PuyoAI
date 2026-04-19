@@ -1,4 +1,4 @@
-const CACHE_NAME = "puyoai-shell-v8";
+const CACHE_NAME = "puyoai-shell-v9";
 
 const APP_SHELL = [
   "./",
@@ -9,6 +9,7 @@ const APP_SHELL = [
   "./src/app/render.js",
   "./src/app/state.js",
   "./src/app/styles.css",
+  "./src/app/version.js",
   "./src/batch/main.js",
   "./src/batch/render.js",
   "./src/core/constants.js",

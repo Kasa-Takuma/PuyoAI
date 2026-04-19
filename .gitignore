@@ -6,4 +6,5 @@ __pycache__/
 models/*
 !models/*.web.json
 !models/manifest.json
+log/
 puyoai-search-*.json

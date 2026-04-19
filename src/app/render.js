@@ -10,6 +10,7 @@ import {
   VISIBLE_HEIGHT,
 } from "../core/constants.js";
 import { boardToRows, encodeAction } from "../core/board.js";
+import { APP_VERSION } from "./version.js";
 import {
   getDisplayedBoard,
   getDisplayedEvent,
@@ -298,6 +299,7 @@ export function renderApp(root, state) {
 
   root.innerHTML = `
     <div class="shell">
+      <div class="version-bar">PuyoAI ${APP_VERSION}</div>
       <header class="hero">
         <div>
           <p class="eyebrow">PPT2-like Solo Simulator</p>

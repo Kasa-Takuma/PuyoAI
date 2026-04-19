@@ -4,6 +4,7 @@ import {
   createChainFocusTrainingSample,
   createSlimPolicyTrainingSample,
 } from "../ai/dataset.js";
+import { extractBoardFeatures } from "../ai/features.js";
 import { applyAction, createGameState } from "../app/state.js";
 
 let activeRunId = 0;
@@ -12,6 +13,29 @@ const DATASET_FLUSH_SIZE = 12;
 const HIGH_CHAIN_THRESHOLD = 7;
 const CHAIN_FOCUS_THRESHOLD = 10;
 const CHAIN_FOCUS_WINDOW = 6;
+const BENCHMARK_FEATURE_KEYS = Object.freeze([
+  "stackCells",
+  "maxHeight",
+  "hiddenCells",
+  "dangerCells",
+  "surfaceRoughness",
+  "steepWalls",
+  "valleyPenalty",
+  "adjacency",
+  "group2Count",
+  "group3Count",
+  "surfaceExtendableGroup2Count",
+  "surfaceReadyGroup3Count",
+  "isolatedSingles",
+  "colorBalance",
+  "columnsUsed",
+  "bestVirtualChain",
+  "bestVirtualScore",
+  "virtualChainCount2Plus",
+  "virtualChainCount3Plus",
+  "topVirtualChainSum",
+  "topVirtualScoreSum",
+]);
 
 function nextTick() {
   return new Promise((resolve) => {
@@ -44,6 +68,22 @@ function postChainEvent(workerId, event) {
   });
 }
 
+function pickBenchmarkFeatures(features) {
+  return Object.fromEntries(
+    BENCHMARK_FEATURE_KEYS.map((key) => [key, features[key] ?? 0]),
+  );
+}
+
+function topCandidateSummary(candidates, limit = 3) {
+  return (candidates ?? []).slice(0, limit).map((candidate) => ({
+    actionKey: candidate.actionKey,
+    searchScore: Math.round(candidate.searchScore),
+    immediateChains: candidate.immediateChains,
+    immediateScore: candidate.immediateScore,
+    bestDepth: candidate.bestDepth,
+  }));
+}
+
 function flushDatasetChunk(workerId, type, datasetBuffer) {
   if (datasetBuffer.length === 0) {
     return [];
@@ -73,6 +113,8 @@ async function runBatchLoop({
   let currentState = null;
   let currentSeed = "";
   let sessionScore = 0;
+  let lastHighChainTotalTurn = null;
+  let lastFocusChainTotalTurn = null;
   const chainHistogram = {};
   let slimDatasetBuffer = [];
   let chainFocusBuffer = [];
@@ -120,12 +162,30 @@ async function runBatchLoop({
         );
       }
 
+      const preActionBoard = currentState.board;
       const result = applyAction(currentState, analysis.bestAction, "ai");
       totalTurns += 1;
       sessionScore += result.totalScore;
       overallBestChain = Math.max(overallBestChain, currentState.maxChains);
 
       if (result.totalChains >= HIGH_CHAIN_THRESHOLD) {
+        const benchmarkFeatures = extractBoardFeatures(preActionBoard, {
+          includeVirtualChains: true,
+        });
+        const topCandidates = topCandidateSummary(analysis.candidates);
+        const searchMargin =
+          topCandidates.length >= 2
+            ? topCandidates[0].searchScore - topCandidates[1].searchScore
+            : null;
+        const turnsSincePrevious7Plus =
+          lastHighChainTotalTurn === null
+            ? null
+            : totalTurns - lastHighChainTotalTurn;
+        const turnsSincePrevious10Plus =
+          lastFocusChainTotalTurn === null
+            ? null
+            : totalTurns - lastFocusChainTotalTurn;
+
         incrementHistogram(chainHistogram, result.totalChains);
         postChainEvent(workerId, {
           workerId,
@@ -138,7 +198,23 @@ async function runBatchLoop({
           score: result.totalScore,
           totalScore: currentState.totalScore,
           maxChains: currentState.maxChains,
+          actionKey: analysis.bestActionKey,
+          currentPair: snapshot.currentPair,
+          nextQueueHead: snapshot.nextQueue.slice(0, 3),
+          topCandidates,
+          searchMargin,
+          turnsSincePrevious7Plus,
+          turnsSincePrevious10Plus,
+          featureBucket:
+            result.totalChains >= CHAIN_FOCUS_THRESHOLD
+              ? "10+"
+              : String(result.totalChains),
+          features: pickBenchmarkFeatures(benchmarkFeatures),
         });
+        lastHighChainTotalTurn = totalTurns;
+        if (result.totalChains >= CHAIN_FOCUS_THRESHOLD) {
+          lastFocusChainTotalTurn = totalTurns;
+        }
       }
 
       recentDetailedTurns.push({

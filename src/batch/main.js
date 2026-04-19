@@ -5,6 +5,7 @@ import {
   serializeAiDataset,
 } from "../ai/dataset.js";
 import { DEFAULT_SEARCH_PROFILE_ID } from "../ai/search-profiles.js";
+import { APP_VERSION } from "../app/version.js";
 import { renderBatchApp } from "./render.js";
 
 const root = document.querySelector("#app");
@@ -184,6 +185,109 @@ function buildProfileSummaries(workers) {
   }));
 }
 
+function highChainBucket(chains) {
+  return chains >= 10 ? "10+" : String(chains);
+}
+
+function createEventAggregate(key) {
+  return {
+    key,
+    count: 0,
+    scoreSum: 0,
+    totalScoreSum: 0,
+    maxChain: 0,
+    searchMarginSum: 0,
+    searchMarginCount: 0,
+    gap7Sum: 0,
+    gap7Count: 0,
+    gap10Sum: 0,
+    gap10Count: 0,
+    chainHistogram: {},
+    actionCounts: {},
+    featureSums: {},
+  };
+}
+
+function addEventToAggregate(aggregate, event) {
+  aggregate.count += 1;
+  aggregate.scoreSum += event.score ?? 0;
+  aggregate.totalScoreSum += event.totalScore ?? 0;
+  aggregate.maxChain = Math.max(aggregate.maxChain, event.chains ?? 0);
+  mergeHistogram(aggregate.chainHistogram, { [event.chains]: 1 });
+
+  if (event.actionKey) {
+    aggregate.actionCounts[event.actionKey] =
+      (aggregate.actionCounts[event.actionKey] ?? 0) + 1;
+  }
+
+  if (typeof event.searchMargin === "number") {
+    aggregate.searchMarginSum += event.searchMargin;
+    aggregate.searchMarginCount += 1;
+  }
+  if (typeof event.turnsSincePrevious7Plus === "number") {
+    aggregate.gap7Sum += event.turnsSincePrevious7Plus;
+    aggregate.gap7Count += 1;
+  }
+  if (typeof event.turnsSincePrevious10Plus === "number") {
+    aggregate.gap10Sum += event.turnsSincePrevious10Plus;
+    aggregate.gap10Count += 1;
+  }
+
+  for (const [feature, value] of Object.entries(event.features ?? {})) {
+    aggregate.featureSums[feature] = (aggregate.featureSums[feature] ?? 0) + value;
+  }
+}
+
+function topCounts(counts, limit = 8) {
+  return Object.entries(counts)
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit)
+    .map(([key, count]) => ({ key, count }));
+}
+
+function finalizeEventAggregate(aggregate) {
+  const featureAverages = Object.fromEntries(
+    Object.entries(aggregate.featureSums).map(([feature, sum]) => [
+      feature,
+      sum / Math.max(1, aggregate.count),
+    ]),
+  );
+
+  return {
+    key: aggregate.key,
+    count: aggregate.count,
+    avgScore: aggregate.scoreSum / Math.max(1, aggregate.count),
+    avgTotalScore: aggregate.totalScoreSum / Math.max(1, aggregate.count),
+    maxChain: aggregate.maxChain,
+    avgSearchMargin:
+      aggregate.searchMarginCount > 0
+        ? aggregate.searchMarginSum / aggregate.searchMarginCount
+        : null,
+    avgTurnsSincePrevious7Plus:
+      aggregate.gap7Count > 0 ? aggregate.gap7Sum / aggregate.gap7Count : null,
+    avgTurnsSincePrevious10Plus:
+      aggregate.gap10Count > 0 ? aggregate.gap10Sum / aggregate.gap10Count : null,
+    chainHistogram: aggregate.chainHistogram,
+    topActions: topCounts(aggregate.actionCounts),
+    featureAverages,
+  };
+}
+
+function aggregateChainEvents(events, keyFn) {
+  const aggregates = new Map();
+
+  for (const event of events) {
+    const key = keyFn(event);
+    const aggregate = aggregates.get(key) ?? createEventAggregate(key);
+    addEventToAggregate(aggregate, event);
+    aggregates.set(key, aggregate);
+  }
+
+  return [...aggregates.values()]
+    .map((aggregate) => finalizeEventAggregate(aggregate))
+    .sort((left, right) => String(left.key).localeCompare(String(right.key)));
+}
+
 function buildBenchmarkReport() {
   const chainHistogram = state.workers.reduce(
     (histogram, worker) => mergeHistogram(histogram, worker.chainHistogram),
@@ -209,7 +313,8 @@ function buildBenchmarkReport() {
 
   return {
     kind: "puyoai_batch_benchmark_summary",
-    version: 1,
+    version: 2,
+    appVersion: APP_VERSION,
     createdAt: new Date().toISOString(),
     thresholds: {
       highChain: HIGH_CHAIN_THRESHOLD,
@@ -243,6 +348,17 @@ function buildBenchmarkReport() {
     },
     chainHistogram,
     profileSummaries: buildProfileSummaries(state.workers),
+    eventBucketSummaries: aggregateChainEvents(chainEvents, (event) =>
+      highChainBucket(event.chains),
+    ),
+    eventProfileSummaries: aggregateChainEvents(
+      chainEvents,
+      (event) => event.searchProfile ?? "unknown",
+    ),
+    eventProfileBucketSummaries: aggregateChainEvents(
+      chainEvents,
+      (event) => `${event.searchProfile ?? "unknown"}:${highChainBucket(event.chains)}`,
+    ),
     workers: state.workers.map((worker) => ({
       workerId: worker.id,
       searchProfile: worker.searchProfile,
