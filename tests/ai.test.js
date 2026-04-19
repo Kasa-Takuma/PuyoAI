@@ -6,6 +6,7 @@ import {
   createChainFocusTrainingSample,
   createPolicyTrainingSample,
   createSlimPolicyTrainingSample,
+  createValueTrainingSample,
 } from "../src/ai/dataset.js";
 import { extractBoardFeatures } from "../src/ai/features.js";
 import { searchBestMove } from "../src/ai/search.js";
@@ -605,6 +606,61 @@ test("chain focus sample includes trigger metadata", () => {
   assert.equal(sample.focus.thresholdChains, 10);
   assert.equal(sample.focus.offsetFromTrigger, -2);
   assert.equal(sample.focus.gameSeed, "batch:worker-2:game-5");
+});
+
+test("value sample includes immediate and future labels", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, searchProfile: "chain_builder_v11" },
+  });
+  const snapshot = createAiSnapshot({
+    presetId: "doubleChain",
+    seed: "value-seed",
+    turn: 3,
+    totalScore: 120,
+    board,
+    currentPair,
+    nextQueue: [],
+  });
+
+  const sample = createValueTrainingSample({
+    snapshot,
+    analysis,
+    workerId: 1,
+    gameSeed: "batch:worker-1:game-1",
+    features: { stackCells: 6, bestVirtualChain: 2 },
+    immediate: { chains: 0, score: 0, topout: false, actionKey: "RIGHT:3" },
+    future: {
+      12: { complete: true, stepsObserved: 12, maxChains: 8, chains10Plus: 0 },
+      24: { complete: true, stepsObserved: 24, maxChains: 11, chains10Plus: 1 },
+      48: { complete: false, stepsObserved: 30, maxChains: 11, chains10Plus: 1 },
+    },
+  });
+
+  assert.equal(sample.kind, "search_value");
+  assert.equal(sample.context.searchProfile, "chain_builder_v11");
+  assert.equal(sample.future[24].maxChains, 11);
+  assert.equal(sample.search.bestActionKey, analysis.bestActionKey);
 });
 
 test("feature extraction sees the virtual double-chain trigger on the demo board", () => {

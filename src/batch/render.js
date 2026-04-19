@@ -111,6 +111,7 @@ function summaryFromState(state) {
     activeWorkers,
     slimDatasetSamples: state.slimDataset.length,
     chainFocusSamples: state.chainFocusDataset.length,
+    valueSamples: state.valueDataset.length,
     chainHistogram,
     chainHistogramsByProfile,
     chainEventsTotal,
@@ -356,11 +357,16 @@ export function renderBatchApp(root, state) {
             <button id="export-chain-focus-dataset" class="soft" ${
               state.chainFocusDataset.length > 0 ? "" : "disabled"
             }>Export 10+ Focus</button>
+            <button id="export-value-dataset" class="soft" ${
+              state.valueDataset.length > 0 ? "" : "disabled"
+            }>Export Value</button>
             <button id="export-benchmark-report" class="soft" ${
               summary.totalTurns > 0 ? "" : "disabled"
             }>Export Benchmark</button>
             <button id="clear-batch-dataset" class="soft" ${
-              state.slimDataset.length > 0 || state.chainFocusDataset.length > 0
+              state.slimDataset.length > 0 ||
+              state.chainFocusDataset.length > 0 ||
+              state.valueDataset.length > 0
                 ? ""
                 : "disabled"
             }>Clear Dataset</button>
@@ -399,6 +405,10 @@ export function renderBatchApp(root, state) {
             <div class="metric-card">
               <span class="metric-label">10+ Focus Samples</span>
               <strong>${summary.chainFocusSamples}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Value Samples</span>
+              <strong>${summary.valueSamples}</strong>
             </div>
             <div class="metric-card">
               <span class="metric-label">&lt;7 Chain Events</span>

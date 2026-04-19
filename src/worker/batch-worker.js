@@ -3,6 +3,7 @@ import {
   createAiSnapshot,
   createChainFocusTrainingSample,
   createSlimPolicyTrainingSample,
+  createValueTrainingSample,
 } from "../ai/dataset.js";
 import { extractBoardFeatures } from "../ai/features.js";
 import { applyAction, createGameState } from "../app/state.js";
@@ -13,6 +14,8 @@ const DATASET_FLUSH_SIZE = 12;
 const HIGH_CHAIN_THRESHOLD = 7;
 const CHAIN_FOCUS_THRESHOLD = 10;
 const CHAIN_FOCUS_WINDOW = 12;
+const VALUE_HORIZONS = Object.freeze([12, 24, 48]);
+const VALUE_MAX_HORIZON = Math.max(...VALUE_HORIZONS);
 const BENCHMARK_FEATURE_KEYS = Object.freeze([
   "stackCells",
   "maxHeight",
@@ -97,6 +100,99 @@ function flushDatasetChunk(workerId, type, datasetBuffer) {
   return [];
 }
 
+function createEmptyFutureLabel() {
+  return {
+    complete: false,
+    stepsObserved: 0,
+    totalScore: 0,
+    maxChains: 0,
+    chainEvents: 0,
+    chains7Plus: 0,
+    chains10Plus: 0,
+    chains11Plus: 0,
+    chains12Plus: 0,
+    chains13Plus: 0,
+    topout: false,
+    topoutAt: null,
+  };
+}
+
+function createFutureLabels() {
+  return Object.fromEntries(
+    VALUE_HORIZONS.map((horizon) => [horizon, createEmptyFutureLabel()]),
+  );
+}
+
+function updateFutureLabel(label, result, stepOffset) {
+  label.stepsObserved = stepOffset;
+  label.totalScore += result.totalScore;
+  label.maxChains = Math.max(label.maxChains, result.totalChains);
+  if (result.totalChains > 0) {
+    label.chainEvents += 1;
+  }
+  if (result.totalChains >= 7) {
+    label.chains7Plus += 1;
+  }
+  if (result.totalChains >= 10) {
+    label.chains10Plus += 1;
+  }
+  if (result.totalChains >= 11) {
+    label.chains11Plus += 1;
+  }
+  if (result.totalChains >= 12) {
+    label.chains12Plus += 1;
+  }
+  if (result.totalChains >= 13) {
+    label.chains13Plus += 1;
+  }
+  if (result.topout && !label.topout) {
+    label.topout = true;
+    label.topoutAt = stepOffset;
+  }
+}
+
+function finalizeValueEntry(entry, terminal = false) {
+  const future = Object.fromEntries(
+    VALUE_HORIZONS.map((horizon) => {
+      const label = { ...entry.future[horizon] };
+      label.complete = terminal || label.stepsObserved >= horizon;
+      return [horizon, label];
+    }),
+  );
+
+  return createValueTrainingSample({
+    snapshot: entry.snapshot,
+    analysis: entry.analysis,
+    workerId: entry.workerId,
+    gameSeed: entry.gameSeed,
+    features: entry.features,
+    immediate: entry.immediate,
+    future,
+  });
+}
+
+function observeValueFuture(pendingEntries, result, terminal = false) {
+  const completed = [];
+
+  for (const entry of pendingEntries) {
+    entry.stepsObserved += 1;
+    for (const horizon of VALUE_HORIZONS) {
+      if (entry.stepsObserved <= horizon) {
+        updateFutureLabel(entry.future[horizon], result, entry.stepsObserved);
+      }
+    }
+  }
+
+  while (
+    pendingEntries.length > 0 &&
+    (terminal || pendingEntries[0].stepsObserved >= VALUE_MAX_HORIZON)
+  ) {
+    completed.push(finalizeValueEntry(pendingEntries.shift(), terminal));
+  }
+
+  return completed;
+}
+
 async function runBatchLoop({
   workerId,
   seedBase,
@@ -119,7 +215,9 @@ async function runBatchLoop({
   const chainHistogram = {};
   let slimDatasetBuffer = [];
   let chainFocusBuffer = [];
+  let valueDatasetBuffer = [];
   let recentDetailedTurns = [];
+  let pendingValueEntries = [];
 
   while (!stopRequested && runId === activeRunId) {
     currentSeed = `${seedBase}:worker-${workerId}:game-${completedGames + 1}`;
@@ -165,12 +263,42 @@ async function runBatchLoop({
       }
 
       const preActionBoard = currentState.board;
+      const preActionFeatures = extractBoardFeatures(preActionBoard, {
+        includeVirtualChains: true,
+      });
       const result = applyAction(currentState, analysis.bestAction, "ai");
       totalTurns += 1;
       sessionScore += result.totalScore;
       overallBestChain = Math.max(overallBestChain, currentState.maxChains);
       if (result.totalChains > 0) {
         chainEventsTotal += 1;
+      }
+
+      pendingValueEntries.push({
+        workerId,
+        gameSeed: currentSeed,
+        snapshot,
+        analysis,
+        features: pickBenchmarkFeatures(preActionFeatures),
+        immediate: {
+          chains: result.totalChains,
+          score: result.totalScore,
+          topout: result.topout,
+          allClear: result.allClear,
+          actionKey: analysis.bestActionKey,
+        },
+        future: createFutureLabels(),
+        stepsObserved: 0,
+      });
+      valueDatasetBuffer.push(
+        ...observeValueFuture(pendingValueEntries, result, currentState.gameOver),
+      );
+      if (valueDatasetBuffer.length >= DATASET_FLUSH_SIZE) {
+        valueDatasetBuffer = flushDatasetChunk(
+          workerId,
+          "batch-value-dataset-chunk",
+          valueDatasetBuffer,
+        );
       }
 
       if (result.totalChains >= HIGH_CHAIN_THRESHOLD) {
@@ -296,6 +424,13 @@ async function runBatchLoop({
       "batch-chain-focus-dataset-chunk",
       chainFocusBuffer,
     );
+    valueDatasetBuffer.push(...pendingValueEntries.map((entry) => finalizeValueEntry(entry, true)));
+    pendingValueEntries = [];
+    valueDatasetBuffer = flushDatasetChunk(
+      workerId,
+      "batch-value-dataset-chunk",
+      valueDatasetBuffer,
+    );
     recentDetailedTurns = [];
 
     postWorkerUpdate(workerId, {
@@ -328,6 +463,11 @@ async function runBatchLoop({
     workerId,
     "batch-chain-focus-dataset-chunk",
     chainFocusBuffer,
+  );
+  valueDatasetBuffer = flushDatasetChunk(
+    workerId,
+    "batch-value-dataset-chunk",
+    valueDatasetBuffer,
   );
 
   postWorkerUpdate(workerId, {

@@ -2,6 +2,7 @@ import {
   createBenchmarkReportFilename,
   createChainFocusDatasetFilename,
   createSlimDatasetFilename,
+  createValueDatasetFilename,
   serializeAiDataset,
 } from "../ai/dataset.js";
 import { DEFAULT_SEARCH_PROFILE_ID } from "../ai/search-profiles.js";
@@ -80,6 +81,7 @@ function createBatchState() {
     stopRequested: false,
     slimDataset: [],
     chainFocusDataset: [],
+    valueDataset: [],
     chainEvents: [],
     droppedChainEvents: 0,
     workers: Array.from({ length: parallelCount }, (_, index) =>
@@ -365,6 +367,7 @@ function buildBenchmarkReport() {
       chains10Plus: histogramAtLeast(chainHistogram, 10),
       slimSamples: state.slimDataset.length,
       chainFocusSamples: state.chainFocusDataset.length,
+      valueSamples: state.valueDataset.length,
       highChainEventCount: state.chainEvents.length,
       exportedHighChainEvents: chainEvents.length,
       droppedChainEvents: state.droppedChainEvents,
@@ -422,6 +425,12 @@ function handleWorkerMessage(event) {
 
   if (type === "batch-chain-focus-dataset-chunk") {
     state.chainFocusDataset = state.chainFocusDataset.concat(payload.samples ?? []);
+    scheduleRender();
+    return;
+  }
+
+  if (type === "batch-value-dataset-chunk") {
+    state.valueDataset = state.valueDataset.concat(payload.samples ?? []);
     scheduleRender();
     return;
   }
@@ -489,6 +498,7 @@ function startAllWorkers() {
   state.stopRequested = false;
   state.slimDataset = [];
   state.chainFocusDataset = [];
+  state.valueDataset = [];
   state.chainEvents = [];
   state.droppedChainEvents = 0;
   state.workers = state.workers.map((worker) =>
@@ -634,6 +644,18 @@ function bindEvents() {
     );
   });
 
+  document.querySelector("#export-value-dataset")?.addEventListener("click", () => {
+    if (state.valueDataset.length === 0) {
+      return;
+    }
+
+    downloadTextFile(
+      createValueDatasetFilename(),
+      serializeAiDataset(state.valueDataset),
+      "application/json",
+    );
+  });
+
   document.querySelector("#export-benchmark-report")?.addEventListener("click", () => {
     const report = buildBenchmarkReport();
     if (report.totals.totalTurns === 0) {
@@ -650,6 +672,7 @@ function bindEvents() {
   document.querySelector("#clear-batch-dataset")?.addEventListener("click", () => {
     state.slimDataset = [];
     state.chainFocusDataset = [];
+    state.valueDataset = [];
     state.chainEvents = [];
     state.droppedChainEvents = 0;
     rerender();

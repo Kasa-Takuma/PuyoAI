@@ -112,6 +112,44 @@ export function createChainFocusTrainingSample(
   };
 }
 
+export function createValueTrainingSample({
+  snapshot,
+  analysis,
+  workerId,
+  gameSeed,
+  features,
+  immediate,
+  future,
+}) {
+  return {
+    kind: "search_value",
+    version: 1,
+    state: {
+      boardRows: [...snapshot.boardRows],
+      currentPair: clonePair(snapshot.currentPair),
+      nextQueue: snapshot.nextQueue.map((pair) => clonePair(pair)),
+      turn: snapshot.turn,
+      totalScore: snapshot.totalScore,
+    },
+    context: {
+      workerId,
+      gameSeed,
+      searchProfile: analysis.objective,
+    },
+    features,
+    search: {
+      objective: analysis.objective,
+      settings: analysis.settings,
+      bestActionKey: analysis.bestActionKey,
+      bestScore: Math.round(analysis.bestScore),
+      candidateCount: analysis.candidateCount,
+      topCandidates: cloneTopCandidates(analysis.candidates ?? [], 5),
+    },
+    immediate,
+    future,
+  };
+}
+
 export function serializeAiDataset(dataset) {
   return JSON.stringify(dataset, null, 2);
 }
@@ -129,6 +167,11 @@ export function createSlimDatasetFilename() {
 export function createChainFocusDatasetFilename() {
   const iso = new Date().toISOString().replaceAll(":", "-");
   return `puyoai-search-chain-focus-${iso}.json`;
+}
+
+export function createValueDatasetFilename() {
+  const iso = new Date().toISOString().replaceAll(":", "-");
+  return `puyoai-search-value-${iso}.json`;
 }
 
 export function createBenchmarkReportFilename() {
