@@ -158,6 +158,37 @@ test("search AI preserves the selected search profile in its analysis settings",
   assert.equal(analysis.settings.searchProfile, "chain_builder_v4");
 });
 
+test("search AI accepts the v5 search profile", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, searchProfile: "chain_builder_v5" },
+  });
+
+  assert.equal(analysis.objective, "chain_builder_v5");
+  assert.equal(analysis.settings.searchProfile, "chain_builder_v5");
+});
+
 test("slim policy sample keeps only lightweight supervision fields", () => {
   const board = boardFromRows([
     "......",

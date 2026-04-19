@@ -9,6 +9,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v4",
     description: "Experimental profile that rewards 10+ chain potential while guarding high stacks without firepower.",
   },
+  {
+    id: "chain_builder_v5",
+    label: "Chain Builder v5",
+    description: "Pushes v4 toward 10+ finishes by favoring stronger virtual firepower over early 7-9 chain cashouts.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;

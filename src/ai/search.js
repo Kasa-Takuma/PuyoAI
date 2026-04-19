@@ -66,6 +66,14 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
     singleChainPenalty: -300,
     singleScoreScale: 0.1,
   }),
+  chain_builder_v5: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 850,
+    chainExponent: 3.35,
+    scoreScale: 0.82,
+    singleChainPenalty: -340,
+    singleScoreScale: 0.08,
+  }),
 });
 
 function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {

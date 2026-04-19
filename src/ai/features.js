@@ -395,20 +395,49 @@ const BOARD_PROFILE_WEIGHTS = Object.freeze({
     valleyPenalty: -28,
     isolatedSingles: -28,
   }),
+  chain_builder_v5: Object.freeze({
+    ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+    bestVirtualChain: 780,
+    topVirtualChainSum: 250,
+    virtualChainCount2Plus: 90,
+    virtualChainCount3Plus: 240,
+    bestVirtualScore: 0.58,
+    topVirtualScoreSum: 0.095,
+    surfaceReadyGroup3Count: 190,
+    surfaceExtendableGroup2Count: 105,
+    group3Count: 70,
+    group2Count: 24,
+    dangerCells: -195,
+    surfaceRoughness: -9,
+    steepWalls: -62,
+    valleyPenalty: -30,
+    isolatedSingles: -30,
+  }),
 });
 
 export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_ID) {
   const virtualChainCount2Plus = Math.min(features.virtualChainCount2Plus, 6);
   const virtualChainCount3Plus = Math.min(features.virtualChainCount3Plus, 3);
   const weights = BOARD_PROFILE_WEIGHTS[profileId] ?? BOARD_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
-  const v4LargeChainBonus =
-    profileId === "chain_builder_v4"
+  const v4PlusLargeChainBonus =
+    profileId === "chain_builder_v4" || profileId === "chain_builder_v5"
       ? Math.max(0, features.bestVirtualChain - 5) ** 3 * 460 +
         Math.max(0, features.topVirtualChainSum - 15) * 2400 +
         (features.bestVirtualChain >= 10 ? 90_000 : 0) -
         Math.max(0, features.maxHeight - 9) *
           Math.max(0, 6 - features.bestVirtualChain) *
           1400
+      : 0;
+  const v5TenPlusBonus =
+    profileId === "chain_builder_v5"
+      ? Math.max(0, features.bestVirtualChain - 8) ** 3 * 2100 +
+        Math.max(0, features.topVirtualChainSum - 24) * 5200 +
+        Math.max(0, features.topVirtualScoreSum - 100_000) * 0.22 +
+        (features.bestVirtualChain >= 10 ? 85_000 : 0) -
+        Math.max(0, 10 - features.bestVirtualChain) *
+          (Math.max(0, features.maxHeight - 10) * 2400 +
+            features.dangerCells * 900 +
+            Math.max(0, features.steepWalls - 6) * 1000)
       : 0;
 
   return (
@@ -435,6 +464,7 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
     features.steepWalls * weights.steepWalls +
     features.valleyPenalty * weights.valleyPenalty +
     features.isolatedSingles * weights.isolatedSingles +
-    v4LargeChainBonus
+    v4PlusLargeChainBonus +
+    v5TenPlusBonus
   );
 }
