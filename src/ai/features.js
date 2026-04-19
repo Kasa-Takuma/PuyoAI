@@ -555,6 +555,24 @@ const BOARD_PROFILE_WEIGHTS = Object.freeze({
     valleyPenalty: -39,
     isolatedSingles: -37,
   }),
+  chain_builder_v11: Object.freeze({
+    ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+    bestVirtualChain: 958,
+    topVirtualChainSum: 332,
+    virtualChainCount2Plus: 58,
+    virtualChainCount3Plus: 200,
+    bestVirtualScore: 0.70125,
+    topVirtualScoreSum: 0.16504,
+    surfaceReadyGroup3Count: 204,
+    surfaceExtendableGroup2Count: 82,
+    group3Count: 62,
+    group2Count: 18,
+    dangerCells: -263,
+    surfaceRoughness: -14,
+    steepWalls: -81,
+    valleyPenalty: -41,
+    isolatedSingles: -39,
+  }),
 });
 
 function clamp01(value) {
@@ -595,7 +613,8 @@ export function scoreBoardFeatures(
     effectiveProfileId === "chain_builder_v9" ||
     effectiveProfileId === "chain_builder_v9a" ||
     effectiveProfileId === "chain_builder_v9b" ||
-    effectiveProfileId === "chain_builder_v10"
+    effectiveProfileId === "chain_builder_v10" ||
+    effectiveProfileId === "chain_builder_v11"
       ? bonusScale(profileConfig, "largeChain") *
         (Math.max(0, features.bestVirtualChain - 5) ** 3 * 460 +
           Math.max(0, features.topVirtualChainSum - 15) * 2400 +
@@ -773,7 +792,8 @@ export function scoreBoardFeatures(
         Math.max(0, features.hiddenCells) * 16_000
       : 0;
   const v9bBalancedElevenPlusBonus =
-    effectiveProfileId === "chain_builder_v9b"
+    effectiveProfileId === "chain_builder_v9b" ||
+    effectiveProfileId === "chain_builder_v11"
       ? bonusScale(profileConfig, "v9b") *
         (Math.max(0, features.bestVirtualChain - 8) ** 3 * 1450 +
           Math.max(0, features.bestVirtualChain - 10) ** 3 * 5800 +

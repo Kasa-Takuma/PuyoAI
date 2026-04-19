@@ -46,6 +46,7 @@ function parseArgs(argv) {
     seed: "v9b-tune",
     output: null,
     top: 5,
+    only: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -78,6 +79,9 @@ function parseArgs(argv) {
     } else if (arg === "--top") {
       args.top = Math.max(1, Number.parseInt(next, 10) || args.top);
       index += 1;
+    } else if (arg === "--only") {
+      args.only = parseOnlyCandidateIndexes(next);
+      index += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -85,6 +89,19 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+function parseOnlyCandidateIndexes(value) {
+  if (!value) {
+    return null;
+  }
+
+  const indexes = value
+    .split(",")
+    .map((entry) => Number.parseInt(entry.trim(), 10))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+
+  return indexes.length > 0 ? [...new Set(indexes)] : null;
 }
 
 function printHelp() {
@@ -99,7 +116,8 @@ Options:
   --beam-width N     Beam width for the benchmark. Default: 16
   --seed TEXT        Deterministic tuning seed. Default: v9b-tune
   --output PATH      JSON report path. Default: log/puyoai-tuning-report-<iso>.json
-  --top N            Number of top candidates printed at the end. Default: 5`);
+  --top N            Number of top candidates printed at the end. Default: 5
+  --only LIST        Benchmark only selected tuned indexes, e.g. --only 3,8`);
 }
 
 function randomFloat(rng) {
@@ -305,9 +323,16 @@ function main() {
       profileConfig: null,
     },
   ];
+  const onlyIndexes = args.only ? new Set(args.only) : null;
+  const candidateGenerationCount = onlyIndexes
+    ? Math.max(args.candidates, ...onlyIndexes)
+    : args.candidates;
 
-  for (let index = 1; index <= args.candidates; index += 1) {
-    candidates.push(createCandidate(index, rng, baseTurnWeights, baseBoardWeights));
+  for (let index = 1; index <= candidateGenerationCount; index += 1) {
+    const candidate = createCandidate(index, rng, baseTurnWeights, baseBoardWeights);
+    if (!onlyIndexes || onlyIndexes.has(index)) {
+      candidates.push(candidate);
+    }
   }
 
   const startedAt = performance.now();

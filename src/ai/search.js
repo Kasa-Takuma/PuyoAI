@@ -228,6 +228,22 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
     elevenPlusBonus: 245_000,
     twelvePlusBonus: 300_000,
   }),
+  chain_builder_v11: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 750,
+    chainExponent: 3.30539,
+    scoreScale: 0.93973,
+    singleChainPenalty: -23_000,
+    singleScoreScale: 0.03,
+    smallChainPenaltyStep: -35_190,
+    midChainPenalty: -128_117,
+    sevenChainPenalty: -41_134,
+    eightChainPenalty: -71_521,
+    nineChainPenalty: -60_178,
+    tenPlusBonus: 97_509,
+    elevenPlusBonus: 320_358,
+    twelvePlusBonus: 349_342,
+  }),
 });
 
 export function getTurnResultProfileWeights(profileId = DEFAULT_SEARCH_PROFILE_ID) {

@@ -435,6 +435,37 @@ test("search AI accepts the v10 search profile", () => {
   assert.equal(analysis.settings.searchProfile, "chain_builder_v10");
 });
 
+test("search AI accepts the v11 search profile", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, searchProfile: "chain_builder_v11" },
+  });
+
+  assert.equal(analysis.objective, "chain_builder_v11");
+  assert.equal(analysis.settings.searchProfile, "chain_builder_v11");
+});
+
 test("search AI accepts a temporary tuned profile config", () => {
   const board = boardFromRows([
     "......",

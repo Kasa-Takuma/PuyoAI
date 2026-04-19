@@ -89,8 +89,17 @@ npm run tune:v9b -- --candidates 12 --turns 1200 --games 2 --depth 3 --beam-widt
 
 For a more reliable sweep, raise `--turns`, `--candidates`, and usually use
 `--depth 4 --beam-width 24` when you can wait longer. Reports are written to
-`log/puyoai-tuning-report-*.json` and include the best temporary profile config
-so a winning candidate can later be promoted into a named profile such as v11.
+`log/puyoai-tuning-report-*.json` and include the best temporary profile config.
+`chain_builder_v11` is the promoted `tuned_v9b_008` candidate from the first
+v9b tuning run.
+
+To re-benchmark promising candidates from the same tuning seed, use `--only`.
+For example, this reruns only `tuned_v9b_003` and `tuned_v9b_008` plus the v9b
+baseline:
+
+```bash
+npm run tune:v9b -- --only 3,8 --turns 8000 --games 4 --depth 3 --beam-width 16 --seed v9b-tune
+```
 
 ## Learned Policy Training
 
