@@ -44,6 +44,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v9a",
     description: "Focus-tuned 11+ profile that rewards the mature high-stack patterns seen before v8's 11-12 chains.",
   },
+  {
+    id: "chain_builder_v9b",
+    label: "Chain Builder v9b",
+    description: "Keeps v9's flexibility while lightly biasing choices toward 11+ over 10-chain finishes.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;
