@@ -593,8 +593,14 @@ button:disabled {
 .chain-table th,
 .chain-table td {
   padding: 10px 12px;
+  border-right: 1px solid rgba(83, 60, 44, 0.08);
   border-bottom: 1px solid rgba(83, 60, 44, 0.1);
   text-align: left;
+}
+
+.chain-table th:last-child,
+.chain-table td:last-child {
+  border-right: 0;
 }
 
 .chain-table td.numeric {
