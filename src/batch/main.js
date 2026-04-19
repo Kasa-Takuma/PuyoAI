@@ -53,6 +53,7 @@ function createWorkerSnapshot(id) {
     overallBestChain: 0,
     currentSeed: "",
     sessionScore: 0,
+    chainEventsTotal: 0,
     chainHistogram: {},
     lastSearchMs: 0,
     error: null,
@@ -148,6 +149,12 @@ function histogramAtLeast(histogram, threshold) {
   }, 0);
 }
 
+function workerChainEventsTotal(worker) {
+  return typeof worker.chainEventsTotal === "number"
+    ? worker.chainEventsTotal
+    : histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD);
+}
+
 function buildProfileSummaries(workers) {
   const summaries = new Map();
 
@@ -162,6 +169,7 @@ function buildProfileSummaries(workers) {
         completedGames: 0,
         sessionScore: 0,
         bestChain: 0,
+        chainEventsTotal: 0,
         chainHistogram: {},
       };
 
@@ -174,15 +182,23 @@ function buildProfileSummaries(workers) {
       worker.overallBestChain,
       worker.maxChains,
     );
+    summary.chainEventsTotal += workerChainEventsTotal(worker);
     mergeHistogram(summary.chainHistogram, worker.chainHistogram);
     summaries.set(profile, summary);
   }
 
-  return [...summaries.values()].map((summary) => ({
-    ...summary,
-    chains7Plus: histogramAtLeast(summary.chainHistogram, HIGH_CHAIN_THRESHOLD),
-    chains10Plus: histogramAtLeast(summary.chainHistogram, 10),
-  }));
+  return [...summaries.values()].map((summary) => {
+    const chains7Plus = histogramAtLeast(
+      summary.chainHistogram,
+      HIGH_CHAIN_THRESHOLD,
+    );
+    return {
+      ...summary,
+      chainsBelow7: Math.max(0, summary.chainEventsTotal - chains7Plus),
+      chains7Plus,
+      chains10Plus: histogramAtLeast(summary.chainHistogram, 10),
+    };
+  });
 }
 
 function highChainBucket(chains) {
@@ -305,6 +321,10 @@ function buildBenchmarkReport() {
     (sum, worker) => sum + (worker.sessionScore ?? 0),
     0,
   );
+  const chainEventsTotal = state.workers.reduce(
+    (sum, worker) => sum + workerChainEventsTotal(worker),
+    0,
+  );
   const bestChain = state.workers.reduce(
     (best, worker) => Math.max(best, worker.overallBestChain, worker.maxChains),
     0,
@@ -313,7 +333,7 @@ function buildBenchmarkReport() {
 
   return {
     kind: "puyoai_batch_benchmark_summary",
-    version: 2,
+    version: 3,
     appVersion: APP_VERSION,
     createdAt: new Date().toISOString(),
     thresholds: {
@@ -336,6 +356,11 @@ function buildBenchmarkReport() {
       completedGames,
       sessionScore,
       bestChain,
+      chainEventsTotal,
+      chainsBelow7: Math.max(
+        0,
+        chainEventsTotal - histogramAtLeast(chainHistogram, HIGH_CHAIN_THRESHOLD),
+      ),
       chains7Plus: histogramAtLeast(chainHistogram, HIGH_CHAIN_THRESHOLD),
       chains10Plus: histogramAtLeast(chainHistogram, 10),
       slimSamples: state.slimDataset.length,
@@ -372,6 +397,12 @@ function buildBenchmarkReport() {
       currentGameMaxChains: worker.maxChains,
       bestChain: Math.max(worker.overallBestChain, worker.maxChains),
       currentSeed: worker.currentSeed,
+      chainEventsTotal: workerChainEventsTotal(worker),
+      chainsBelow7: Math.max(
+        0,
+        workerChainEventsTotal(worker) -
+          histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD),
+      ),
       chainHistogram: worker.chainHistogram ?? {},
       chains7Plus: histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD),
       chains10Plus: histogramAtLeast(worker.chainHistogram, 10),

@@ -115,6 +115,7 @@ async function runBatchLoop({
   let sessionScore = 0;
   let lastHighChainTotalTurn = null;
   let lastFocusChainTotalTurn = null;
+  let chainEventsTotal = 0;
   const chainHistogram = {};
   let slimDatasetBuffer = [];
   let chainFocusBuffer = [];
@@ -141,6 +142,7 @@ async function runBatchLoop({
       searchProfile: aiSettings.searchProfile,
       lastSearchMs: 0,
       sessionScore,
+      chainEventsTotal,
       chainHistogram: cloneHistogram(chainHistogram),
       error: null,
     });
@@ -167,6 +169,9 @@ async function runBatchLoop({
       totalTurns += 1;
       sessionScore += result.totalScore;
       overallBestChain = Math.max(overallBestChain, currentState.maxChains);
+      if (result.totalChains > 0) {
+        chainEventsTotal += 1;
+      }
 
       if (result.totalChains >= HIGH_CHAIN_THRESHOLD) {
         const benchmarkFeatures = extractBoardFeatures(preActionBoard, {
@@ -267,6 +272,7 @@ async function runBatchLoop({
         searchProfile: aiSettings.searchProfile,
         lastSearchMs: analysis.elapsedMs,
         sessionScore,
+        chainEventsTotal,
         chainHistogram: cloneHistogram(chainHistogram),
         error: null,
       });
@@ -305,6 +311,7 @@ async function runBatchLoop({
       searchProfile: aiSettings.searchProfile,
       lastSearchMs: 0,
       sessionScore,
+      chainEventsTotal,
       chainHistogram: cloneHistogram(chainHistogram),
       error: null,
     });
@@ -336,6 +343,7 @@ async function runBatchLoop({
     searchProfile: aiSettings.searchProfile,
     lastSearchMs: 0,
     sessionScore,
+    chainEventsTotal,
     chainHistogram: cloneHistogram(chainHistogram),
     error: null,
   });
@@ -360,6 +368,7 @@ self.addEventListener("message", (event) => {
         searchProfile: payload?.aiSettings?.searchProfile ?? "",
         lastSearchMs: 0,
         sessionScore: 0,
+        chainEventsTotal: 0,
         chainHistogram: {},
         error: error instanceof Error ? error.message : String(error),
       });

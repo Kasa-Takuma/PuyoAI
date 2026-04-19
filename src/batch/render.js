@@ -49,6 +49,18 @@ function mergeHistogram(target, source = {}) {
   return target;
 }
 
+function histogramAtLeast(histogram, threshold) {
+  return Object.entries(histogram ?? {}).reduce((sum, [chain, count]) => {
+    return Number(chain) >= threshold ? sum + count : sum;
+  }, 0);
+}
+
+function workerChainEventsTotal(worker) {
+  return typeof worker.chainEventsTotal === "number"
+    ? worker.chainEventsTotal
+    : histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD);
+}
+
 function summaryFromState(state) {
   const totalTurns = state.workers.reduce(
     (sum, worker) => sum + worker.totalTurns,
@@ -70,26 +82,26 @@ function summaryFromState(state) {
     ["running", "game-over", "stop-requested"].includes(worker.status),
   ).length;
   const profileOrder = [];
+  const chainEventsByProfile = {};
   const chainHistogramsByProfile = {};
   const chainHistogram = state.workers.reduce((histogram, worker) => {
     const profile = worker.searchProfile || "unknown";
     if (!profileOrder.includes(profile)) {
       profileOrder.push(profile);
     }
+    chainEventsByProfile[profile] =
+      (chainEventsByProfile[profile] ?? 0) + workerChainEventsTotal(worker);
     chainHistogramsByProfile[profile] ??= {};
     mergeHistogram(chainHistogramsByProfile[profile], worker.chainHistogram);
     mergeHistogram(histogram, worker.chainHistogram);
     return histogram;
   }, {});
-  const chainEvents7Plus = Object.entries(chainHistogram).reduce(
-    (sum, [chain, count]) =>
-      Number(chain) >= HIGH_CHAIN_THRESHOLD ? sum + count : sum,
+  const chainEventsTotal = state.workers.reduce(
+    (sum, worker) => sum + workerChainEventsTotal(worker),
     0,
   );
-  const chainEvents10Plus = Object.entries(chainHistogram).reduce(
-    (sum, [chain, count]) => (Number(chain) >= 10 ? sum + count : sum),
-    0,
-  );
+  const chainEvents7Plus = histogramAtLeast(chainHistogram, HIGH_CHAIN_THRESHOLD);
+  const chainEvents10Plus = histogramAtLeast(chainHistogram, 10);
 
   return {
     totalTurns,
@@ -101,7 +113,10 @@ function summaryFromState(state) {
     chainFocusSamples: state.chainFocusDataset.length,
     chainHistogram,
     chainHistogramsByProfile,
+    chainEventsTotal,
+    chainEventsByProfile,
     profileOrder,
+    chainEventsBelow7: Math.max(0, chainEventsTotal - chainEvents7Plus),
     chainEvents7Plus,
     chainEvents10Plus,
     highChainEventSamples: state.chainEvents.length,
@@ -123,11 +138,34 @@ function chainHistogramHeaderMarkup(profileOrder) {
 function chainHistogramRowsMarkup({
   histogram,
   histogramsByProfile,
+  chainEventsByProfile,
+  chainEventsTotal,
   profileOrder,
 }) {
   const observedChains = Object.keys(histogram).map((chain) => Number(chain));
   const maxChain = Math.max(HIGH_CHAIN_THRESHOLD, ...observedChains);
   const rows = [];
+  const totalBelow7 = Math.max(
+    0,
+    chainEventsTotal - histogramAtLeast(histogram, HIGH_CHAIN_THRESHOLD),
+  );
+
+  rows.push(`
+    <tr>
+      <th>&lt;7</th>
+      ${profileOrder
+        .map((profile) => {
+          const profileTotal = chainEventsByProfile[profile] ?? 0;
+          const profile7Plus = histogramAtLeast(
+            histogramsByProfile[profile],
+            HIGH_CHAIN_THRESHOLD,
+          );
+          return `<td class="numeric">${Math.max(0, profileTotal - profile7Plus)}</td>`;
+        })
+        .join("")}
+      <td class="numeric">${totalBelow7}</td>
+    </tr>
+  `);
 
   for (let chains = HIGH_CHAIN_THRESHOLD; chains <= maxChain; chains += 1) {
     rows.push(`
@@ -192,19 +230,20 @@ function workerCardMarkup(worker, controlsDisabled) {
         <span>overall best: ${worker.overallBestChain}</span>
       </div>
       <div class="worker-note">
+        <span>&lt;7 chains: ${Math.max(
+          0,
+          workerChainEventsTotal(worker) -
+            histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD),
+        )}</span>
         <span>7+ chains: ${
-          Object.entries(worker.chainHistogram ?? {}).reduce(
-            (sum, [chain, count]) =>
-              Number(chain) >= HIGH_CHAIN_THRESHOLD ? sum + count : sum,
-            0,
-          )
+          histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD)
         }</span>
+      </div>
+      <div class="worker-note">
         <span>10+ chains: ${
-          Object.entries(worker.chainHistogram ?? {}).reduce(
-            (sum, [chain, count]) => (Number(chain) >= 10 ? sum + count : sum),
-            0,
-          )
+          histogramAtLeast(worker.chainHistogram, 10)
         }</span>
+        <span>clear events: ${workerChainEventsTotal(worker)}</span>
       </div>
 
       <label class="field worker-config-row">
@@ -362,6 +401,10 @@ export function renderBatchApp(root, state) {
               <strong>${summary.chainFocusSamples}</strong>
             </div>
             <div class="metric-card">
+              <span class="metric-label">&lt;7 Chain Events</span>
+              <strong>${summary.chainEventsBelow7}</strong>
+            </div>
+            <div class="metric-card">
               <span class="metric-label">7+ Chain Events</span>
               <strong>${summary.chainEvents7Plus}</strong>
             </div>
@@ -374,10 +417,10 @@ export function renderBatchApp(root, state) {
           <div class="chain-table-wrap">
             <div class="worker-head">
               <div>
-                <p class="panel-kicker">7+ Chain Histogram</p>
+                <p class="panel-kicker">Chain Histogram</p>
                 <h3>Chain Counts</h3>
               </div>
-              <span class="status-chip">${summary.highChainEventSamples} events</span>
+              <span class="status-chip">${summary.chainEventsTotal} clears</span>
             </div>
             <table class="chain-table">
               <thead>
@@ -387,6 +430,8 @@ export function renderBatchApp(root, state) {
                 ${chainHistogramRowsMarkup({
                   histogram: summary.chainHistogram,
                   histogramsByProfile: summary.chainHistogramsByProfile,
+                  chainEventsByProfile: summary.chainEventsByProfile,
+                  chainEventsTotal: summary.chainEventsTotal,
                   profileOrder: summary.profileOrder,
                 })}
               </tbody>
