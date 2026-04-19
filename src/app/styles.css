@@ -575,6 +575,7 @@ button:disabled {
   gap: 14px;
   margin-top: 18px;
   padding: 16px;
+  overflow-x: auto;
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.56);
   border: 1px solid rgba(255, 255, 255, 0.72);
@@ -582,6 +583,7 @@ button:disabled {
 
 .chain-table {
   width: 100%;
+  min-width: 420px;
   border-collapse: collapse;
   overflow: hidden;
   border-radius: 16px;
@@ -593,6 +595,11 @@ button:disabled {
   padding: 10px 12px;
   border-bottom: 1px solid rgba(83, 60, 44, 0.1);
   text-align: left;
+}
+
+.chain-table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .chain-table thead th {

@@ -30,6 +30,25 @@ function workerStatusLabel(worker) {
   }
 }
 
+function searchProfileShortLabel(profileId) {
+  if (typeof profileId === "string" && profileId.startsWith("chain_builder_")) {
+    return profileId.replace("chain_builder_", "");
+  }
+
+  return (
+    SEARCH_PROFILES.find((profile) => profile.id === profileId)?.label ??
+    profileId ??
+    "unknown"
+  );
+}
+
+function mergeHistogram(target, source = {}) {
+  for (const [chain, count] of Object.entries(source)) {
+    target[chain] = (target[chain] ?? 0) + count;
+  }
+  return target;
+}
+
 function summaryFromState(state) {
   const totalTurns = state.workers.reduce(
     (sum, worker) => sum + worker.totalTurns,
@@ -50,10 +69,16 @@ function summaryFromState(state) {
   const activeWorkers = state.workers.filter((worker) =>
     ["running", "game-over", "stop-requested"].includes(worker.status),
   ).length;
+  const profileOrder = [];
+  const chainHistogramsByProfile = {};
   const chainHistogram = state.workers.reduce((histogram, worker) => {
-    for (const [chain, count] of Object.entries(worker.chainHistogram ?? {})) {
-      histogram[chain] = (histogram[chain] ?? 0) + count;
+    const profile = worker.searchProfile || "unknown";
+    if (!profileOrder.includes(profile)) {
+      profileOrder.push(profile);
     }
+    chainHistogramsByProfile[profile] ??= {};
+    mergeHistogram(chainHistogramsByProfile[profile], worker.chainHistogram);
+    mergeHistogram(histogram, worker.chainHistogram);
     return histogram;
   }, {});
   const chainEvents7Plus = Object.entries(chainHistogram).reduce(
@@ -75,13 +100,31 @@ function summaryFromState(state) {
     slimDatasetSamples: state.slimDataset.length,
     chainFocusSamples: state.chainFocusDataset.length,
     chainHistogram,
+    chainHistogramsByProfile,
+    profileOrder,
     chainEvents7Plus,
     chainEvents10Plus,
     highChainEventSamples: state.chainEvents.length,
   };
 }
 
-function chainHistogramRowsMarkup(histogram) {
+function chainHistogramHeaderMarkup(profileOrder) {
+  return `
+    <tr>
+      <th>Chains</th>
+      ${profileOrder
+        .map((profile) => `<th>${searchProfileShortLabel(profile)}</th>`)
+        .join("")}
+      <th>Total</th>
+    </tr>
+  `;
+}
+
+function chainHistogramRowsMarkup({
+  histogram,
+  histogramsByProfile,
+  profileOrder,
+}) {
   const observedChains = Object.keys(histogram).map((chain) => Number(chain));
   const maxChain = Math.max(HIGH_CHAIN_THRESHOLD, ...observedChains);
   const rows = [];
@@ -90,7 +133,13 @@ function chainHistogramRowsMarkup(histogram) {
     rows.push(`
       <tr>
         <th>${chains}</th>
-        <td>${histogram[String(chains)] ?? 0}</td>
+        ${profileOrder
+          .map(
+            (profile) =>
+              `<td class="numeric">${histogramsByProfile[profile]?.[String(chains)] ?? 0}</td>`,
+          )
+          .join("")}
+        <td class="numeric">${histogram[String(chains)] ?? 0}</td>
       </tr>
     `);
   }
@@ -332,13 +381,14 @@ export function renderBatchApp(root, state) {
             </div>
             <table class="chain-table">
               <thead>
-                <tr>
-                  <th>Chains</th>
-                  <th>Total Count</th>
-                </tr>
+                ${chainHistogramHeaderMarkup(summary.profileOrder)}
               </thead>
               <tbody>
-                ${chainHistogramRowsMarkup(summary.chainHistogram)}
+                ${chainHistogramRowsMarkup({
+                  histogram: summary.chainHistogram,
+                  histogramsByProfile: summary.chainHistogramsByProfile,
+                  profileOrder: summary.profileOrder,
+                })}
               </tbody>
             </table>
           </div>
