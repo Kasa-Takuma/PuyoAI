@@ -12,7 +12,7 @@ let stopRequested = false;
 const DATASET_FLUSH_SIZE = 12;
 const HIGH_CHAIN_THRESHOLD = 7;
 const CHAIN_FOCUS_THRESHOLD = 10;
-const CHAIN_FOCUS_WINDOW = 6;
+const CHAIN_FOCUS_WINDOW = 12;
 const BENCHMARK_FEATURE_KEYS = Object.freeze([
   "stackCells",
   "maxHeight",

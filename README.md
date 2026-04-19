@@ -69,7 +69,7 @@ The batch runner page is a field-less parallel execution mode.
 - `Start All`: launch all workers at once
 - `Stop All`: request all workers to stop together
 - `Export Slim`: download all-turn lightweight policy samples
-- `Export 10+ Focus`: download full-detail samples from the 5 turns before and the trigger turn when a 10+ chain occurs
+- `Export 10+ Focus`: download full-detail samples from the 11 turns before and the trigger turn when a 10+ chain occurs
 - `Export Benchmark`: download a compact benchmark summary with per-profile totals, per-worker totals, and 7+ chain events
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
 - the summary panel shows total turns across all workers and a compact 7+ chain histogram
