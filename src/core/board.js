@@ -4,6 +4,7 @@ import {
   COLORS,
   ORIENTATIONS,
   ORIENTATION_ORDER,
+  STORAGE_HEIGHT,
 } from "./constants.js";
 
 export function createEmptyBoard() {
@@ -28,6 +29,9 @@ export function boardFromRows(rowsTopToBottom) {
   for (let rowIndex = 0; rowIndex < clampedRows.length; rowIndex += 1) {
     const sourceRow = clampedRows[rowIndex].padEnd(BOARD_WIDTH, COLORS.EMPTY);
     const y = BOARD_HEIGHT - 1 - (rowIndex + topOffset);
+    if (y >= STORAGE_HEIGHT) {
+      continue;
+    }
     for (let x = 0; x < BOARD_WIDTH; x += 1) {
       board[y][x] = sourceRow[x] ?? COLORS.EMPTY;
     }
@@ -45,7 +49,7 @@ export function boardToRows(board) {
 }
 
 export function getColumnHeight(board, x) {
-  for (let y = BOARD_HEIGHT - 1; y >= 0; y -= 1) {
+  for (let y = STORAGE_HEIGHT - 1; y >= 0; y -= 1) {
     if (board[y][x] !== COLORS.EMPTY) {
       return y + 1;
     }
@@ -55,7 +59,9 @@ export function getColumnHeight(board, x) {
 }
 
 export function isBoardEmpty(board) {
-  return board.every((row) => row.every((cell) => cell === COLORS.EMPTY));
+  return board
+    .slice(0, STORAGE_HEIGHT)
+    .every((row) => row.every((cell) => cell === COLORS.EMPTY));
 }
 
 function normalizePlacementCells(cells) {
@@ -125,7 +131,7 @@ export function applyPlacement(board, pair, action) {
   const cells = computePlacementCells(board, pair, action);
 
   for (const cell of cells) {
-    if (isInsideBoard(cell.x, cell.y)) {
+    if (isInsideBoard(cell.x, cell.y) && cell.y < STORAGE_HEIGHT) {
       nextBoard[cell.y][cell.x] = cell.color;
     }
   }

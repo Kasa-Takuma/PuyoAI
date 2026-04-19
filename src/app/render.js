@@ -6,7 +6,8 @@ import {
   COLOR_LABELS,
   COLORS,
   EVENT_TYPES,
-  HIDDEN_ROWS,
+  TOP_OUT_COLUMN,
+  TOP_OUT_ROW,
   VISIBLE_HEIGHT,
 } from "../core/constants.js";
 import { boardToRows, encodeAction } from "../core/board.js";
@@ -349,8 +350,12 @@ export function renderApp(root, state) {
                     <span class="row-label">${y + 1}</span>
                     ${Array.from({ length: BOARD_WIDTH }, (_, x) => {
                       const color = board[y][x];
+                      const deathCell =
+                        x === TOP_OUT_COLUMN && y === TOP_OUT_ROW
+                          ? " death-cell"
+                          : "";
                       return `
-                        <span class="cell ${COLOR_CLASS[color]}">
+                        <span class="cell ${COLOR_CLASS[color]}${deathCell}">
                           <span class="cell-core"></span>
                         </span>
                       `;
@@ -373,7 +378,7 @@ export function renderApp(root, state) {
               </div>
               <div class="mini-panel board-note">
                 <span class="mini-title">Visible</span>
-                <p>上の ${HIDDEN_ROWS} 行は見えない領域として表示しています。</p>
+                <p>13段目は消去判定に使わず、14段目に置かれたぷよは消滅します。×は敗北点です。</p>
               </div>
             </aside>
           </div>

@@ -5,6 +5,7 @@ Browser-based Puyo Puyo simulator and replay viewer aimed at a PPT2-like solo ru
 ## Current Features
 
 - deterministic solo simulator core
+- PPT2-like top rules: the third column's 12th row is the topout point, 13th-row puyos do not join clears, and 14th-row placements disappear
 - chain replay viewer
 - manual placement and random play
 - search AI with configurable depth and beam width
@@ -74,6 +75,22 @@ The batch runner page is a field-less parallel execution mode.
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
 - the summary panel shows total turns across all workers and a compact 7+ chain histogram
 - benchmark exports include lightweight pre-fire features for 7+ chain events, plus bucket/profile aggregate averages for evaluation tuning
+
+## Search Profile Tuning
+
+Phase 1 tuning keeps the search AI architecture and automatically tests small
+mutations around `chain_builder_v9b`.
+
+Run a quick local sweep:
+
+```bash
+npm run tune:v9b -- --candidates 12 --turns 1200 --games 2 --depth 3 --beam-width 16
+```
+
+For a more reliable sweep, raise `--turns`, `--candidates`, and usually use
+`--depth 4 --beam-width 24` when you can wait longer. Reports are written to
+`log/puyoai-tuning-report-*.json` and include the best temporary profile config
+so a winning candidate can later be promoted into a named profile such as v11.
 
 ## Learned Policy Training
 

@@ -21,13 +21,59 @@ function clampBeamWidth(beamWidth) {
   return Math.max(4, Math.min(96, Number.parseInt(beamWidth, 10) || 24));
 }
 
-function normalizeSettings(settings = {}) {
-  const normalizedProfile = getSearchProfile(settings.searchProfile ?? settings.profileId);
+function normalizeProfileConfig(profileConfig, fallbackProfileId) {
+  if (!profileConfig || typeof profileConfig !== "object") {
+    return null;
+  }
+
+  const baseProfile = getSearchProfile(profileConfig.baseProfileId ?? fallbackProfileId);
+  const id =
+    typeof profileConfig.id === "string" && profileConfig.id.length > 0
+      ? profileConfig.id
+      : `${baseProfile.id}_tuned`;
+
   return {
+    id,
+    label:
+      typeof profileConfig.label === "string" && profileConfig.label.length > 0
+        ? profileConfig.label
+        : id,
+    baseProfileId: baseProfile.id,
+    turnWeights:
+      profileConfig.turnWeights && typeof profileConfig.turnWeights === "object"
+        ? profileConfig.turnWeights
+        : null,
+    boardWeights:
+      profileConfig.boardWeights && typeof profileConfig.boardWeights === "object"
+        ? profileConfig.boardWeights
+        : null,
+    bonusScales:
+      profileConfig.bonusScales && typeof profileConfig.bonusScales === "object"
+        ? profileConfig.bonusScales
+        : null,
+  };
+}
+
+function normalizeSettings(settings = {}) {
+  const requestedProfileId = settings.searchProfile ?? settings.profileId;
+  const profileConfig = normalizeProfileConfig(
+    settings.profileConfig,
+    requestedProfileId,
+  );
+  const normalizedProfile = getSearchProfile(
+    profileConfig?.baseProfileId ?? requestedProfileId,
+  );
+
+  const normalizedSettings = {
     depth: clampDepth(settings.depth ?? 3),
     beamWidth: clampBeamWidth(settings.beamWidth ?? 24),
-    searchProfile: normalizedProfile.id,
+    searchProfile: profileConfig?.id ?? normalizedProfile.id,
   };
+  if (profileConfig) {
+    normalizedSettings.baseSearchProfile = normalizedProfile.id;
+    normalizedSettings.profileConfig = profileConfig;
+  }
+  return normalizedSettings;
 }
 
 function cloneAction(action) {
@@ -184,9 +230,30 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
   }),
 });
 
-function scoreContextualTurnAdjustment(result, profileId, context = {}) {
+export function getTurnResultProfileWeights(profileId = DEFAULT_SEARCH_PROFILE_ID) {
+  const weights =
+    TURN_RESULT_PROFILE_WEIGHTS[profileId] ??
+    TURN_RESULT_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
+  return { ...weights };
+}
+
+function resolveTurnResultProfileWeights(profileId, profileConfig) {
+  const baseProfileId = profileConfig?.baseProfileId ?? profileId;
+  return {
+    ...getTurnResultProfileWeights(baseProfileId),
+    ...(profileConfig?.turnWeights ?? {}),
+  };
+}
+
+function scoreContextualTurnAdjustment(
+  result,
+  profileId,
+  context = {},
+  profileConfig = null,
+) {
+  const effectiveProfileId = profileConfig?.baseProfileId ?? profileId;
   if (
-    profileId !== "chain_builder_v10" ||
+    effectiveProfileId !== "chain_builder_v10" ||
     result.totalChains < 7 ||
     result.totalChains > 9
   ) {
@@ -226,10 +293,13 @@ function scoreContextualTurnAdjustment(result, profileId, context = {}) {
   return -Math.min(260_000, penalty);
 }
 
-function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID, context = {}) {
-  const weights =
-    TURN_RESULT_PROFILE_WEIGHTS[profileId] ??
-    TURN_RESULT_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
+function scoreTurnResult(
+  result,
+  profileId = DEFAULT_SEARCH_PROFILE_ID,
+  context = {},
+  profileConfig = null,
+) {
+  const weights = resolveTurnResultProfileWeights(profileId, profileConfig);
   if (result.topout) {
     return weights.topoutPenalty;
   }
@@ -269,6 +339,7 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID, context 
     result,
     profileId,
     context,
+    profileConfig,
   );
   return (
     chainValue +
@@ -286,19 +357,24 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID, context 
   );
 }
 
-function createExpandedNode(node, pair, action, layerIndex, profileId) {
+function createExpandedNode(node, pair, action, layerIndex, profileId, profileConfig) {
   const result = resolveTurn(node.board, pair, action);
   const features = extractBoardFeatures(result.finalBoard, {
     includeVirtualChains: false,
   });
-  const heuristicScore = scoreBoardFeatures(features, profileId);
+  const heuristicScore = scoreBoardFeatures(features, profileId, profileConfig);
   const beforeFeatures =
-    profileId === "chain_builder_v10" &&
+    (profileConfig?.baseProfileId ?? profileId) === "chain_builder_v10" &&
     result.totalChains >= 7 &&
     result.totalChains <= 9
       ? extractBoardFeatures(node.board, { includeVirtualChains: true })
       : null;
-  const turnValue = scoreTurnResult(result, profileId, { beforeFeatures });
+  const turnValue = scoreTurnResult(
+    result,
+    profileId,
+    { beforeFeatures },
+    profileConfig,
+  );
   const cumulativeValue = node.cumulativeValue + turnValue;
   const searchScore = cumulativeValue + heuristicScore;
   const rootAction = node.rootAction ?? cloneAction(action);
@@ -314,6 +390,7 @@ function createExpandedNode(node, pair, action, layerIndex, profileId) {
   return {
     board: result.finalBoard,
     profileId,
+    profileConfig,
     rootAction,
     rootKey,
     rootTurn,
@@ -332,7 +409,11 @@ function createCandidate(node) {
   const refinedFeatures = extractBoardFeatures(node.board, {
     includeVirtualChains: true,
   });
-  const heuristicScore = scoreBoardFeatures(refinedFeatures, node.profileId);
+  const heuristicScore = scoreBoardFeatures(
+    refinedFeatures,
+    node.profileId,
+    node.profileConfig,
+  );
   const searchScore = node.cumulativeValue + heuristicScore;
 
   return {
@@ -361,7 +442,8 @@ function createCandidate(node) {
 export function searchBestMove({ board, currentPair, nextQueue = [], settings = {} }) {
   const startedAt = performance.now();
   const normalizedSettings = normalizeSettings(settings);
-  const profile = getSearchProfile(normalizedSettings.searchProfile);
+  const profileId = normalizedSettings.searchProfile;
+  const profileConfig = normalizedSettings.profileConfig;
   const candidatePools = new Map();
   const rootActions = enumerateLegalActions(board, currentPair);
 
@@ -370,7 +452,8 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
     const node = createExpandedNode(
       {
         board,
-        profileId: profile.id,
+        profileId,
+        profileConfig,
         rootAction: null,
         rootKey: null,
         rootTurn: null,
@@ -381,7 +464,8 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
       currentPair,
       action,
       0,
-      profile.id,
+      profileId,
+      profileConfig,
     );
     expandedNodeCount += 1;
     rememberCandidateNode(candidatePools, node);
@@ -402,7 +486,14 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
     for (const node of frontier) {
       const actions = enumerateLegalActions(node.board, pair);
       for (const action of actions) {
-        const child = createExpandedNode(node, pair, action, depthIndex, profile.id);
+        const child = createExpandedNode(
+          node,
+          pair,
+          action,
+          depthIndex,
+          profileId,
+          profileConfig,
+        );
         expandedNodeCount += 1;
         rememberCandidateNode(candidatePools, child);
         expanded.push(child);
@@ -431,7 +522,7 @@ export function searchBestMove({ board, currentPair, nextQueue = [], settings = 
   const elapsedMs = performance.now() - startedAt;
 
   return {
-    objective: profile.id,
+    objective: profileId,
     settings: normalizedSettings,
     bestAction,
     bestActionKey: bestAction ? encodeAction(bestAction) : null,

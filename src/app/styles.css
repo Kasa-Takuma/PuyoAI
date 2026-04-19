@@ -281,6 +281,16 @@ h2 {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.cell.death-cell.empty::after {
+  content: "X";
+  position: absolute;
+  color: #ec3434;
+  font-size: 1.55rem;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+
 .cell.red .cell-core {
   background: radial-gradient(circle at 30% 30%, #ffd1c4, var(--red) 55%, #d44127);
 }

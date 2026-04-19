@@ -49,19 +49,17 @@ test("search AI finds the obvious double-chain action", () => {
 test("search AI avoids immediate topout when a safe move exists", () => {
   const board = boardFromRows([
     "......",
-    "......",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
-    "R.....",
+    "..G...",
+    "..B...",
+    "..Y...",
+    "..R...",
+    "..G...",
+    "..B...",
+    "..Y...",
+    "..R...",
+    "..G...",
+    "..B...",
+    "..Y...",
   ]);
   const currentPair = {
     axis: COLORS.BLUE,
@@ -435,6 +433,50 @@ test("search AI accepts the v10 search profile", () => {
 
   assert.equal(analysis.objective, "chain_builder_v10");
   assert.equal(analysis.settings.searchProfile, "chain_builder_v10");
+});
+
+test("search AI accepts a temporary tuned profile config", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: {
+      depth: 1,
+      beamWidth: 24,
+      searchProfile: "chain_builder_v9b",
+      profileConfig: {
+        id: "test_tuned_v9b",
+        baseProfileId: "chain_builder_v9b",
+        turnWeights: { elevenPlusBonus: 360_000 },
+        boardWeights: { bestVirtualChain: 940 },
+        bonusScales: { v9b: 1.05 },
+      },
+    },
+  });
+
+  assert.equal(analysis.objective, "test_tuned_v9b");
+  assert.equal(analysis.settings.searchProfile, "test_tuned_v9b");
+  assert.equal(analysis.settings.baseSearchProfile, "chain_builder_v9b");
+  assert.equal(analysis.settings.profileConfig.baseProfileId, "chain_builder_v9b");
 });
 
 test("slim policy sample keeps only lightweight supervision fields", () => {

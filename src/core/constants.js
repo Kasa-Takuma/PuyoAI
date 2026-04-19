@@ -1,8 +1,11 @@
 export const BOARD_WIDTH = 6;
 export const BOARD_HEIGHT = 14;
 export const VISIBLE_HEIGHT = 12;
+export const STORAGE_HEIGHT = 13;
 export const HIDDEN_ROWS = BOARD_HEIGHT - VISIBLE_HEIGHT;
 export const NEXT_PREVIEW_COUNT = 3;
+export const TOP_OUT_COLUMN = 2;
+export const TOP_OUT_ROW = VISIBLE_HEIGHT - 1;
 
 export const COLORS = Object.freeze({
   EMPTY: ".",
