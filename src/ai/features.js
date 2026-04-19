@@ -413,6 +413,23 @@ const BOARD_PROFILE_WEIGHTS = Object.freeze({
     valleyPenalty: -30,
     isolatedSingles: -30,
   }),
+  chain_builder_v6: Object.freeze({
+    ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+    bestVirtualChain: 750,
+    topVirtualChainSum: 235,
+    virtualChainCount3Plus: 330,
+    bestVirtualScore: 0.54,
+    topVirtualScoreSum: 0.09,
+    surfaceReadyGroup3Count: 230,
+    surfaceExtendableGroup2Count: 118,
+    group3Count: 78,
+    group2Count: 27,
+    dangerCells: -190,
+    surfaceRoughness: -8,
+    steepWalls: -60,
+    valleyPenalty: -29,
+    isolatedSingles: -30,
+  }),
 });
 
 export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_ID) {
@@ -420,7 +437,9 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
   const virtualChainCount3Plus = Math.min(features.virtualChainCount3Plus, 3);
   const weights = BOARD_PROFILE_WEIGHTS[profileId] ?? BOARD_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
   const v4PlusLargeChainBonus =
-    profileId === "chain_builder_v4" || profileId === "chain_builder_v5"
+    profileId === "chain_builder_v4" ||
+    profileId === "chain_builder_v5" ||
+    profileId === "chain_builder_v6"
       ? Math.max(0, features.bestVirtualChain - 5) ** 3 * 460 +
         Math.max(0, features.topVirtualChainSum - 15) * 2400 +
         (features.bestVirtualChain >= 10 ? 90_000 : 0) -
@@ -437,7 +456,17 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
         Math.max(0, 10 - features.bestVirtualChain) *
           (Math.max(0, features.maxHeight - 10) * 2400 +
             features.dangerCells * 900 +
-            Math.max(0, features.steepWalls - 6) * 1000)
+          Math.max(0, features.steepWalls - 6) * 1000)
+      : 0;
+  const v6TenPlusBonus =
+    profileId === "chain_builder_v6"
+      ? Math.max(0, features.bestVirtualChain - 8) ** 3 * 850 +
+        Math.max(0, features.topVirtualChainSum - 24) * 2200 +
+        Math.max(0, features.topVirtualScoreSum - 100_000) * 0.08 +
+        (features.bestVirtualChain >= 10 ? 40_000 : 0) -
+        Math.max(0, features.maxHeight - 10) *
+          Math.max(0, 7 - features.bestVirtualChain) *
+          900
       : 0;
 
   return (
@@ -465,6 +494,7 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
     features.valleyPenalty * weights.valleyPenalty +
     features.isolatedSingles * weights.isolatedSingles +
     v4PlusLargeChainBonus +
-    v5TenPlusBonus
+    v5TenPlusBonus +
+    v6TenPlusBonus
   );
 }

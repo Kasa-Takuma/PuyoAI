@@ -14,6 +14,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v5",
     description: "Pushes v4 toward 10+ finishes by favoring stronger virtual firepower over early 7-9 chain cashouts.",
   },
+  {
+    id: "chain_builder_v6",
+    label: "Chain Builder v6",
+    description: "Keeps v4's high-chain frequency while adding a lighter 10+ preference than v5.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;
