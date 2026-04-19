@@ -29,6 +29,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v7a",
     description: "Bolder stable-frequency profile that suppresses 7-9 early fires and strongly favors repeatable 10+ chain-ready boards.",
   },
+  {
+    id: "chain_builder_v8",
+    label: "Chain Builder v8",
+    description: "Builds on v7a with stronger anti-small-fire penalties while preserving cleanup moves that lead to 10+ potential.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;

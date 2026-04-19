@@ -282,6 +282,37 @@ test("search AI accepts the v7a search profile", () => {
   assert.equal(analysis.settings.searchProfile, "chain_builder_v7a");
 });
 
+test("search AI accepts the v8 search profile", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, searchProfile: "chain_builder_v8" },
+  });
+
+  assert.equal(analysis.objective, "chain_builder_v8");
+  assert.equal(analysis.settings.searchProfile, "chain_builder_v8");
+});
+
 test("slim policy sample keeps only lightweight supervision fields", () => {
   const board = boardFromRows([
     "......",

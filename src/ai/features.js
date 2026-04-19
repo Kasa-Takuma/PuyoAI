@@ -465,6 +465,24 @@ const BOARD_PROFILE_WEIGHTS = Object.freeze({
     valleyPenalty: -35,
     isolatedSingles: -34,
   }),
+  chain_builder_v8: Object.freeze({
+    ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+    bestVirtualChain: 850,
+    topVirtualChainSum: 305,
+    virtualChainCount2Plus: 70,
+    virtualChainCount3Plus: 250,
+    bestVirtualScore: 0.64,
+    topVirtualScoreSum: 0.14,
+    surfaceReadyGroup3Count: 210,
+    surfaceExtendableGroup2Count: 100,
+    group3Count: 70,
+    group2Count: 22,
+    dangerCells: -235,
+    surfaceRoughness: -12,
+    steepWalls: -82,
+    valleyPenalty: -38,
+    isolatedSingles: -36,
+  }),
 });
 
 export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_ID) {
@@ -476,7 +494,8 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
     profileId === "chain_builder_v5" ||
     profileId === "chain_builder_v6" ||
     profileId === "chain_builder_v7" ||
-    profileId === "chain_builder_v7a"
+    profileId === "chain_builder_v7a" ||
+    profileId === "chain_builder_v8"
       ? Math.max(0, features.bestVirtualChain - 5) ** 3 * 460 +
         Math.max(0, features.topVirtualChainSum - 15) * 2400 +
         (features.bestVirtualChain >= 10 ? 90_000 : 0) -
@@ -549,6 +568,34 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
         Math.max(0, features.steepWalls - 9) * 1800 -
         Math.max(0, features.hiddenCells) * 10_000
       : 0;
+  const v8AntiSmallFireBonus =
+    profileId === "chain_builder_v8"
+      ? Math.max(0, features.bestVirtualChain - 7) ** 3 * 1000 +
+        Math.max(0, features.bestVirtualChain - 9) ** 3 * 3200 +
+        Math.max(0, features.topVirtualChainSum - 23) * 3200 +
+        Math.max(0, features.topVirtualChainSum - 28) * 6800 +
+        Math.max(0, features.topVirtualScoreSum - 95_000) * 0.24 +
+        Math.max(0, features.topVirtualScoreSum - 145_000) * 0.22 +
+        Math.min(features.virtualChainCount3Plus, 12) *
+          (features.bestVirtualChain >= 9 ? 2400 : 250) +
+        (features.bestVirtualChain >= 10 ? 170_000 : 0) +
+        (features.bestVirtualChain >= 11 ? 125_000 : 0) +
+        (features.bestVirtualChain >= 10 && features.stackCells >= 48
+          ? Math.min(features.stackCells - 47, 12) * 3200
+          : 0) -
+        Math.max(0, features.stackCells - 48) *
+          Math.max(0, 10 - features.bestVirtualChain) *
+          11_500 -
+        Math.max(0, features.maxHeight - 10) *
+          Math.max(0, 9 - features.bestVirtualChain) *
+          5000 -
+        Math.max(0, features.dangerCells - 2) *
+          Math.max(0, 10 - features.bestVirtualChain) *
+          3200 -
+        Math.max(0, features.surfaceRoughness - 16) * 1400 -
+        Math.max(0, features.steepWalls - 9) * 2200 -
+        Math.max(0, features.hiddenCells) * 12_000
+      : 0;
 
   return (
     features.bestVirtualChain ** 3 * weights.bestVirtualChain +
@@ -578,6 +625,7 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
     v5TenPlusBonus +
     v6TenPlusBonus +
     v7StretchBonus +
-    v7aStableFrequencyBonus
+    v7aStableFrequencyBonus +
+    v8AntiSmallFireBonus
   );
 }

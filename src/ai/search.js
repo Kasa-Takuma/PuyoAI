@@ -102,6 +102,22 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
     elevenPlusBonus: 100_000,
     twelvePlusBonus: 140_000,
   }),
+  chain_builder_v8: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 820,
+    chainExponent: 3.32,
+    scoreScale: 0.86,
+    singleChainPenalty: -16_000,
+    singleScoreScale: 0.04,
+    smallChainPenaltyStep: -24_000,
+    midChainPenalty: -75_000,
+    sevenChainPenalty: -30_000,
+    eightChainPenalty: -45_000,
+    nineChainPenalty: -15_000,
+    tenPlusBonus: 170_000,
+    elevenPlusBonus: 130_000,
+    twelvePlusBonus: 180_000,
+  }),
 });
 
 function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
@@ -124,10 +140,20 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
     weights.chainValueBase * result.totalChains ** weights.chainExponent;
   const scoreValue = result.totalScore * weights.scoreScale;
   const allClearBonus = result.allClear ? weights.allClearBonus : 0;
+  const smallChainPenalty =
+    result.totalChains >= 2 && result.totalChains <= 6
+      ? (weights.smallChainPenaltyStep ?? 0) * (7 - result.totalChains)
+      : 0;
   const midChainPenalty =
     result.totalChains >= 7 && result.totalChains <= 9
       ? weights.midChainPenalty ?? 0
       : 0;
+  const sevenChainPenalty =
+    result.totalChains === 7 ? weights.sevenChainPenalty ?? 0 : 0;
+  const eightChainPenalty =
+    result.totalChains === 8 ? weights.eightChainPenalty ?? 0 : 0;
+  const nineChainPenalty =
+    result.totalChains === 9 ? weights.nineChainPenalty ?? 0 : 0;
   const tenPlusBonus = result.totalChains >= 10 ? weights.tenPlusBonus ?? 0 : 0;
   const elevenPlusBonus =
     result.totalChains >= 11 ? weights.elevenPlusBonus ?? 0 : 0;
@@ -137,7 +163,11 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
     chainValue +
     scoreValue +
     allClearBonus +
+    smallChainPenalty +
     midChainPenalty +
+    sevenChainPenalty +
+    eightChainPenalty +
+    nineChainPenalty +
     tenPlusBonus +
     elevenPlusBonus +
     twelvePlusBonus
