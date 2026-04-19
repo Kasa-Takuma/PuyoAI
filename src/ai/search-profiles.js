@@ -49,6 +49,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v9b",
     description: "Keeps v9's flexibility while lightly biasing choices toward 11+ over 10-chain finishes.",
   },
+  {
+    id: "chain_builder_v10",
+    label: "Chain Builder v10",
+    description: "Hybrid profile that builds like v8 early, shifts toward v9b on mature boards, and avoids safe 7-9 cashouts.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;

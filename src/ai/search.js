@@ -166,9 +166,67 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
     elevenPlusBonus: 320_000,
     twelvePlusBonus: 380_000,
   }),
+  chain_builder_v10: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 800,
+    chainExponent: 3.34,
+    scoreScale: 0.875,
+    singleChainPenalty: -20_000,
+    singleScoreScale: 0.035,
+    smallChainPenaltyStep: -30_000,
+    midChainPenalty: -90_000,
+    sevenChainPenalty: -38_000,
+    eightChainPenalty: -58_000,
+    nineChainPenalty: -35_000,
+    tenPlusBonus: 130_000,
+    elevenPlusBonus: 245_000,
+    twelvePlusBonus: 300_000,
+  }),
 });
 
-function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
+function scoreContextualTurnAdjustment(result, profileId, context = {}) {
+  if (
+    profileId !== "chain_builder_v10" ||
+    result.totalChains < 7 ||
+    result.totalChains > 9
+  ) {
+    return 0;
+  }
+
+  const beforeFeatures = context.beforeFeatures;
+  if (!beforeFeatures) {
+    return 0;
+  }
+
+  const isSafeBeforeFire =
+    beforeFeatures.hiddenCells === 0 &&
+    beforeFeatures.dangerCells <= 2 &&
+    beforeFeatures.maxHeight <= 11;
+  if (!isSafeBeforeFire) {
+    return 0;
+  }
+
+  const hasMoreRoomToGrow =
+    beforeFeatures.bestVirtualChain >= 8 ||
+    beforeFeatures.topVirtualChainSum >= 22 ||
+    beforeFeatures.topVirtualScoreSum >= 80_000 ||
+    beforeFeatures.stackCells >= 38;
+  if (!hasMoreRoomToGrow) {
+    return 0;
+  }
+
+  const safety = Math.max(0, 12 - beforeFeatures.maxHeight) * 11_000 +
+    Math.max(0, 3 - beforeFeatures.dangerCells) * 18_000;
+  const potential = Math.max(0, beforeFeatures.bestVirtualChain - 7) * 20_000 +
+    Math.max(0, beforeFeatures.topVirtualChainSum - 22) * 5000 +
+    Math.max(0, beforeFeatures.topVirtualScoreSum - 90_000) * 0.12;
+  const chainFactor = 10 - result.totalChains;
+  const penalty = chainFactor * (45_000 + safety + potential);
+
+  return -Math.min(260_000, penalty);
+}
+
+function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID, context = {}) {
   const weights =
     TURN_RESULT_PROFILE_WEIGHTS[profileId] ??
     TURN_RESULT_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
@@ -207,6 +265,11 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
     result.totalChains >= 11 ? weights.elevenPlusBonus ?? 0 : 0;
   const twelvePlusBonus =
     result.totalChains >= 12 ? weights.twelvePlusBonus ?? 0 : 0;
+  const contextualAdjustment = scoreContextualTurnAdjustment(
+    result,
+    profileId,
+    context,
+  );
   return (
     chainValue +
     scoreValue +
@@ -218,7 +281,8 @@ function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {
     nineChainPenalty +
     tenPlusBonus +
     elevenPlusBonus +
-    twelvePlusBonus
+    twelvePlusBonus +
+    contextualAdjustment
   );
 }
 
@@ -228,7 +292,13 @@ function createExpandedNode(node, pair, action, layerIndex, profileId) {
     includeVirtualChains: false,
   });
   const heuristicScore = scoreBoardFeatures(features, profileId);
-  const turnValue = scoreTurnResult(result, profileId);
+  const beforeFeatures =
+    profileId === "chain_builder_v10" &&
+    result.totalChains >= 7 &&
+    result.totalChains <= 9
+      ? extractBoardFeatures(node.board, { includeVirtualChains: true })
+      : null;
+  const turnValue = scoreTurnResult(result, profileId, { beforeFeatures });
   const cumulativeValue = node.cumulativeValue + turnValue;
   const searchScore = cumulativeValue + heuristicScore;
   const rootAction = node.rootAction ?? cloneAction(action);
