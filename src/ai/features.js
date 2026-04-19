@@ -354,138 +354,62 @@ export function featuresToVector(features) {
   return FEATURE_KEYS.map((key) => features[key]);
 }
 
+const CHAIN_BUILDER_V3_BOARD_WEIGHTS = Object.freeze({
+  bestVirtualChain: 620,
+  topVirtualChainSum: 160,
+  virtualChainCount2Plus: 110,
+  virtualChainCount3Plus: 260,
+  bestVirtualScore: 0.42,
+  topVirtualScoreSum: 0.05,
+  surfaceReadyGroup3Count: 240,
+  surfaceExtendableGroup2Count: 120,
+  readyGroup3Count: 0,
+  extendableGroup2Count: 0,
+  group3Count: 80,
+  group2Count: 28,
+  adjacency: 12,
+  staircaseLinks: 20,
+  colorBalance: 140,
+  stackCells: 12,
+  columnsUsed: 14,
+  hiddenCells: -5000,
+  dangerCells: -220,
+  surfaceRoughness: -10,
+  steepWalls: -70,
+  valleyPenalty: -32,
+  isolatedSingles: -38,
+});
+
 const BOARD_PROFILE_WEIGHTS = Object.freeze({
-  chain_builder_v3: {
-    bestVirtualChain: 620,
-    topVirtualChainSum: 160,
-    virtualChainCount2Plus: 110,
-    virtualChainCount3Plus: 260,
-    bestVirtualScore: 0.42,
-    topVirtualScoreSum: 0.05,
-    surfaceReadyGroup3Count: 240,
-    surfaceExtendableGroup2Count: 120,
-    readyGroup3Count: 0,
-    extendableGroup2Count: 0,
-    group3Count: 80,
-    group2Count: 28,
-    adjacency: 12,
-    staircaseLinks: 20,
-    colorBalance: 140,
-    stackCells: 12,
-    columnsUsed: 14,
-    hiddenCells: -5000,
-    dangerCells: -220,
-    surfaceRoughness: -10,
-    steepWalls: -70,
-    valleyPenalty: -32,
-    isolatedSingles: -38,
-  },
-  balanced_v1: {
-    bestVirtualChain: 500,
-    topVirtualChainSum: 130,
-    virtualChainCount2Plus: 95,
-    virtualChainCount3Plus: 200,
-    bestVirtualScore: 0.34,
-    topVirtualScoreSum: 0.04,
-    surfaceReadyGroup3Count: 180,
-    surfaceExtendableGroup2Count: 92,
-    readyGroup3Count: 52,
-    extendableGroup2Count: 28,
-    group3Count: 64,
-    group2Count: 22,
-    adjacency: 10,
-    staircaseLinks: 18,
-    colorBalance: 120,
-    stackCells: 10,
-    columnsUsed: 12,
-    hiddenCells: -5200,
-    dangerCells: -260,
-    surfaceRoughness: -12,
-    steepWalls: -78,
-    valleyPenalty: -40,
-    isolatedSingles: -44,
-  },
-  survival_v1: {
-    bestVirtualChain: 320,
-    topVirtualChainSum: 90,
-    virtualChainCount2Plus: 70,
-    virtualChainCount3Plus: 140,
-    bestVirtualScore: 0.22,
-    topVirtualScoreSum: 0.03,
-    surfaceReadyGroup3Count: 110,
-    surfaceExtendableGroup2Count: 66,
-    readyGroup3Count: 44,
-    extendableGroup2Count: 40,
-    group3Count: 48,
-    group2Count: 18,
-    adjacency: 8,
-    staircaseLinks: 14,
-    colorBalance: 100,
-    stackCells: 8,
-    columnsUsed: 10,
-    hiddenCells: -6200,
-    dangerCells: -420,
-    surfaceRoughness: -18,
-    steepWalls: -112,
-    valleyPenalty: -56,
-    isolatedSingles: -52,
-  },
-  aggressive_chain_v1: {
-    bestVirtualChain: 760,
-    topVirtualChainSum: 210,
-    virtualChainCount2Plus: 130,
+  chain_builder_v3: CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+  chain_builder_v4: Object.freeze({
+    ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+    bestVirtualChain: 720,
+    topVirtualChainSum: 220,
     virtualChainCount3Plus: 320,
     bestVirtualScore: 0.5,
-    topVirtualScoreSum: 0.06,
-    surfaceReadyGroup3Count: 280,
-    surfaceExtendableGroup2Count: 136,
-    readyGroup3Count: 20,
-    extendableGroup2Count: 0,
-    group3Count: 92,
-    group2Count: 34,
-    adjacency: 14,
-    staircaseLinks: 24,
-    colorBalance: 130,
-    stackCells: 14,
-    columnsUsed: 16,
-    hiddenCells: -4400,
-    dangerCells: -170,
+    topVirtualScoreSum: 0.075,
+    dangerCells: -185,
     surfaceRoughness: -8,
     steepWalls: -58,
-    valleyPenalty: -26,
-    isolatedSingles: -34,
-  },
-  long_horizon_v1: {
-    bestVirtualChain: 430,
-    topVirtualChainSum: 120,
-    virtualChainCount2Plus: 90,
-    virtualChainCount3Plus: 180,
-    bestVirtualScore: 0.28,
-    topVirtualScoreSum: 0.035,
-    surfaceReadyGroup3Count: 150,
-    surfaceExtendableGroup2Count: 98,
-    readyGroup3Count: 76,
-    extendableGroup2Count: 54,
-    group3Count: 72,
-    group2Count: 24,
-    adjacency: 11,
-    staircaseLinks: 16,
-    colorBalance: 125,
-    stackCells: 9,
-    columnsUsed: 12,
-    hiddenCells: -5600,
-    dangerCells: -300,
-    surfaceRoughness: -10,
-    steepWalls: -82,
-    valleyPenalty: -34,
-    isolatedSingles: -40,
-  },
+    valleyPenalty: -28,
+    isolatedSingles: -28,
+  }),
 });
 
 export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_ID) {
   const virtualChainCount2Plus = Math.min(features.virtualChainCount2Plus, 6);
   const virtualChainCount3Plus = Math.min(features.virtualChainCount3Plus, 3);
   const weights = BOARD_PROFILE_WEIGHTS[profileId] ?? BOARD_PROFILE_WEIGHTS[DEFAULT_SEARCH_PROFILE_ID];
+  const v4LargeChainBonus =
+    profileId === "chain_builder_v4"
+      ? Math.max(0, features.bestVirtualChain - 5) ** 3 * 460 +
+        Math.max(0, features.topVirtualChainSum - 15) * 2400 +
+        (features.bestVirtualChain >= 10 ? 90_000 : 0) -
+        Math.max(0, features.maxHeight - 9) *
+          Math.max(0, 6 - features.bestVirtualChain) *
+          1400
+      : 0;
 
   return (
     features.bestVirtualChain ** 3 * weights.bestVirtualChain +
@@ -510,6 +434,7 @@ export function scoreBoardFeatures(features, profileId = DEFAULT_SEARCH_PROFILE_
     features.surfaceRoughness * weights.surfaceRoughness +
     features.steepWalls * weights.steepWalls +
     features.valleyPenalty * weights.valleyPenalty +
-    features.isolatedSingles * weights.isolatedSingles
+    features.isolatedSingles * weights.isolatedSingles +
+    v4LargeChainBonus
   );
 }

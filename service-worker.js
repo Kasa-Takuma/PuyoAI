@@ -1,4 +1,4 @@
-const CACHE_NAME = "puyoai-shell-v6";
+const CACHE_NAME = "puyoai-shell-v8";
 
 const APP_SHELL = [
   "./",

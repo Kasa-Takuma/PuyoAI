@@ -131,6 +131,11 @@ export function createChainFocusDatasetFilename() {
   return `puyoai-search-chain-focus-${iso}.json`;
 }
 
+export function createBenchmarkReportFilename() {
+  const iso = new Date().toISOString().replaceAll(":", "-");
+  return `puyoai-benchmark-summary-${iso}.json`;
+}
+
 export function summarizeBestAction(analysis) {
   if (!analysis?.bestAction) {
     return "No action";

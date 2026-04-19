@@ -47,52 +47,25 @@ function rememberCandidateNode(candidatePools, node, maxPerRoot = 3) {
   candidatePools.set(node.rootKey, nodes);
 }
 
+const CHAIN_BUILDER_V3_TURN_WEIGHTS = Object.freeze({
+  topoutPenalty: -5_000_000,
+  singleChainPenalty: -240,
+  singleScoreScale: 0.15,
+  chainValueBase: 1100,
+  chainExponent: 3,
+  scoreScale: 0.7,
+  allClearBonus: 180,
+});
+
 const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
-  chain_builder_v3: {
-    topoutPenalty: -5_000_000,
-    singleChainPenalty: -240,
-    singleScoreScale: 0.15,
-    chainValueBase: 1100,
-    chainExponent: 3,
-    scoreScale: 0.7,
-    allClearBonus: 180,
-  },
-  balanced_v1: {
-    topoutPenalty: -5_500_000,
-    singleChainPenalty: -280,
-    singleScoreScale: 0.12,
-    chainValueBase: 980,
-    chainExponent: 3,
-    scoreScale: 0.65,
-    allClearBonus: 160,
-  },
-  survival_v1: {
-    topoutPenalty: -6_000_000,
-    singleChainPenalty: -420,
-    singleScoreScale: 0.08,
-    chainValueBase: 760,
-    chainExponent: 3,
-    scoreScale: 0.55,
-    allClearBonus: 120,
-  },
-  aggressive_chain_v1: {
-    topoutPenalty: -4_600_000,
-    singleChainPenalty: -180,
-    singleScoreScale: 0.18,
-    chainValueBase: 1350,
-    chainExponent: 3,
-    scoreScale: 0.78,
-    allClearBonus: 220,
-  },
-  long_horizon_v1: {
-    topoutPenalty: -5_700_000,
-    singleChainPenalty: -360,
+  chain_builder_v3: CHAIN_BUILDER_V3_TURN_WEIGHTS,
+  chain_builder_v4: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 1200,
+    scoreScale: 0.76,
+    singleChainPenalty: -300,
     singleScoreScale: 0.1,
-    chainValueBase: 900,
-    chainExponent: 3,
-    scoreScale: 0.62,
-    allClearBonus: 150,
-  },
+  }),
 });
 
 function scoreTurnResult(result, profileId = DEFAULT_SEARCH_PROFILE_ID) {

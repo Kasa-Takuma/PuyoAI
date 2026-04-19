@@ -9,6 +9,7 @@ import { applyAction, createGameState } from "../app/state.js";
 let activeRunId = 0;
 let stopRequested = false;
 const DATASET_FLUSH_SIZE = 12;
+const HIGH_CHAIN_THRESHOLD = 7;
 const CHAIN_FOCUS_THRESHOLD = 10;
 const CHAIN_FOCUS_WINDOW = 6;
 
@@ -23,6 +24,23 @@ function postWorkerUpdate(workerId, payload) {
     type: "batch-update",
     workerId,
     ...payload,
+  });
+}
+
+function cloneHistogram(histogram) {
+  return Object.fromEntries(Object.entries(histogram));
+}
+
+function incrementHistogram(histogram, chains) {
+  const key = String(chains);
+  histogram[key] = (histogram[key] ?? 0) + 1;
+}
+
+function postChainEvent(workerId, event) {
+  self.postMessage({
+    type: "batch-chain-event",
+    workerId,
+    event,
   });
 }
 
@@ -54,6 +72,8 @@ async function runBatchLoop({
   let overallBestChain = 0;
   let currentState = null;
   let currentSeed = "";
+  let sessionScore = 0;
+  const chainHistogram = {};
   let slimDatasetBuffer = [];
   let chainFocusBuffer = [];
   let recentDetailedTurns = [];
@@ -76,7 +96,10 @@ async function runBatchLoop({
       score: 0,
       maxChains: 0,
       currentSeed,
+      searchProfile: aiSettings.searchProfile,
       lastSearchMs: 0,
+      sessionScore,
+      chainHistogram: cloneHistogram(chainHistogram),
       error: null,
     });
 
@@ -99,7 +122,24 @@ async function runBatchLoop({
 
       const result = applyAction(currentState, analysis.bestAction, "ai");
       totalTurns += 1;
+      sessionScore += result.totalScore;
       overallBestChain = Math.max(overallBestChain, currentState.maxChains);
+
+      if (result.totalChains >= HIGH_CHAIN_THRESHOLD) {
+        incrementHistogram(chainHistogram, result.totalChains);
+        postChainEvent(workerId, {
+          workerId,
+          searchProfile: aiSettings.searchProfile,
+          seed: currentSeed,
+          game: completedGames + 1,
+          turn: currentState.turn - 1,
+          totalTurns,
+          chains: result.totalChains,
+          score: result.totalScore,
+          totalScore: currentState.totalScore,
+          maxChains: currentState.maxChains,
+        });
+      }
 
       recentDetailedTurns.push({
         snapshot,
@@ -148,7 +188,10 @@ async function runBatchLoop({
         score: currentState.totalScore,
         maxChains: currentState.maxChains,
         currentSeed,
+        searchProfile: aiSettings.searchProfile,
         lastSearchMs: analysis.elapsedMs,
+        sessionScore,
+        chainHistogram: cloneHistogram(chainHistogram),
         error: null,
       });
 
@@ -183,7 +226,10 @@ async function runBatchLoop({
       score: 0,
       maxChains: 0,
       currentSeed: `${seedBase}:worker-${workerId}:game-${completedGames + 1}`,
+      searchProfile: aiSettings.searchProfile,
       lastSearchMs: 0,
+      sessionScore,
+      chainHistogram: cloneHistogram(chainHistogram),
       error: null,
     });
 
@@ -211,7 +257,10 @@ async function runBatchLoop({
     score: currentState ? currentState.totalScore : 0,
     maxChains: currentState ? currentState.maxChains : 0,
     currentSeed,
+    searchProfile: aiSettings.searchProfile,
     lastSearchMs: 0,
+    sessionScore,
+    chainHistogram: cloneHistogram(chainHistogram),
     error: null,
   });
 }
@@ -232,7 +281,10 @@ self.addEventListener("message", (event) => {
         score: 0,
         maxChains: 0,
         currentSeed: "",
+        searchProfile: payload?.aiSettings?.searchProfile ?? "",
         lastSearchMs: 0,
+        sessionScore: 0,
+        chainHistogram: {},
         error: error instanceof Error ? error.message : String(error),
       });
     });

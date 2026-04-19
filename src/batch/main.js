@@ -1,4 +1,5 @@
 import {
+  createBenchmarkReportFilename,
   createChainFocusDatasetFilename,
   createSlimDatasetFilename,
   serializeAiDataset,
@@ -7,6 +8,8 @@ import { DEFAULT_SEARCH_PROFILE_ID } from "../ai/search-profiles.js";
 import { renderBatchApp } from "./render.js";
 
 const root = document.querySelector("#app");
+const HIGH_CHAIN_THRESHOLD = 7;
+const MAX_CHAIN_EVENTS_IN_REPORT = 100_000;
 
 const DEFAULT_PARALLEL_COUNT = Math.max(
   1,
@@ -48,6 +51,8 @@ function createWorkerSnapshot(id) {
     currentGame: 0,
     overallBestChain: 0,
     currentSeed: "",
+    sessionScore: 0,
+    chainHistogram: {},
     lastSearchMs: 0,
     error: null,
   };
@@ -73,6 +78,8 @@ function createBatchState() {
     stopRequested: false,
     slimDataset: [],
     chainFocusDataset: [],
+    chainEvents: [],
+    droppedChainEvents: 0,
     workers: Array.from({ length: parallelCount }, (_, index) =>
       createWorkerSnapshotWithProfile(index + 1),
     ),
@@ -127,6 +134,136 @@ function updateRunningFlag() {
   }
 }
 
+function mergeHistogram(target, source = {}) {
+  for (const [chain, count] of Object.entries(source)) {
+    target[chain] = (target[chain] ?? 0) + count;
+  }
+  return target;
+}
+
+function histogramAtLeast(histogram, threshold) {
+  return Object.entries(histogram).reduce((sum, [chain, count]) => {
+    return Number(chain) >= threshold ? sum + count : sum;
+  }, 0);
+}
+
+function buildProfileSummaries(workers) {
+  const summaries = new Map();
+
+  for (const worker of workers) {
+    const profile = worker.searchProfile || "unknown";
+    const summary =
+      summaries.get(profile) ??
+      {
+        searchProfile: profile,
+        workers: 0,
+        totalTurns: 0,
+        completedGames: 0,
+        sessionScore: 0,
+        bestChain: 0,
+        chainHistogram: {},
+      };
+
+    summary.workers += 1;
+    summary.totalTurns += worker.totalTurns;
+    summary.completedGames += worker.completedGames;
+    summary.sessionScore += worker.sessionScore ?? 0;
+    summary.bestChain = Math.max(
+      summary.bestChain,
+      worker.overallBestChain,
+      worker.maxChains,
+    );
+    mergeHistogram(summary.chainHistogram, worker.chainHistogram);
+    summaries.set(profile, summary);
+  }
+
+  return [...summaries.values()].map((summary) => ({
+    ...summary,
+    chains7Plus: histogramAtLeast(summary.chainHistogram, HIGH_CHAIN_THRESHOLD),
+    chains10Plus: histogramAtLeast(summary.chainHistogram, 10),
+  }));
+}
+
+function buildBenchmarkReport() {
+  const chainHistogram = state.workers.reduce(
+    (histogram, worker) => mergeHistogram(histogram, worker.chainHistogram),
+    {},
+  );
+  const totalTurns = state.workers.reduce(
+    (sum, worker) => sum + worker.totalTurns,
+    0,
+  );
+  const completedGames = state.workers.reduce(
+    (sum, worker) => sum + worker.completedGames,
+    0,
+  );
+  const sessionScore = state.workers.reduce(
+    (sum, worker) => sum + (worker.sessionScore ?? 0),
+    0,
+  );
+  const bestChain = state.workers.reduce(
+    (best, worker) => Math.max(best, worker.overallBestChain, worker.maxChains),
+    0,
+  );
+  const chainEvents = state.chainEvents.slice(0, MAX_CHAIN_EVENTS_IN_REPORT);
+
+  return {
+    kind: "puyoai_batch_benchmark_summary",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    thresholds: {
+      highChain: HIGH_CHAIN_THRESHOLD,
+      chainFocus: 10,
+    },
+    settings: {
+      seedBase: state.seedBase,
+      parallelCount: state.parallelCount,
+      depth: state.aiSettings.depth,
+      beamWidth: state.aiSettings.beamWidth,
+      bulkSearchProfile: state.aiSettings.searchProfile,
+      workerProfiles: state.workers.map((worker) => ({
+        workerId: worker.id,
+        searchProfile: worker.searchProfile,
+      })),
+    },
+    totals: {
+      totalTurns,
+      completedGames,
+      sessionScore,
+      bestChain,
+      chains7Plus: histogramAtLeast(chainHistogram, HIGH_CHAIN_THRESHOLD),
+      chains10Plus: histogramAtLeast(chainHistogram, 10),
+      slimSamples: state.slimDataset.length,
+      chainFocusSamples: state.chainFocusDataset.length,
+      highChainEventCount: state.chainEvents.length,
+      exportedHighChainEvents: chainEvents.length,
+      droppedChainEvents: state.droppedChainEvents,
+      highChainEventsTruncated:
+        state.chainEvents.length > MAX_CHAIN_EVENTS_IN_REPORT,
+    },
+    chainHistogram,
+    profileSummaries: buildProfileSummaries(state.workers),
+    workers: state.workers.map((worker) => ({
+      workerId: worker.id,
+      searchProfile: worker.searchProfile,
+      status: worker.status,
+      currentGame: worker.currentGame,
+      completedGames: worker.completedGames,
+      currentTurn: worker.turn,
+      totalTurns: worker.totalTurns,
+      currentScore: worker.score,
+      sessionScore: worker.sessionScore ?? 0,
+      currentGameMaxChains: worker.maxChains,
+      bestChain: Math.max(worker.overallBestChain, worker.maxChains),
+      currentSeed: worker.currentSeed,
+      chainHistogram: worker.chainHistogram ?? {},
+      chains7Plus: histogramAtLeast(worker.chainHistogram, HIGH_CHAIN_THRESHOLD),
+      chains10Plus: histogramAtLeast(worker.chainHistogram, 10),
+    })),
+    highChainEvents: chainEvents,
+  };
+}
+
 function handleWorkerMessage(event) {
   const { type, workerId, ...payload } = event.data ?? {};
 
@@ -138,6 +275,16 @@ function handleWorkerMessage(event) {
 
   if (type === "batch-chain-focus-dataset-chunk") {
     state.chainFocusDataset = state.chainFocusDataset.concat(payload.samples ?? []);
+    scheduleRender();
+    return;
+  }
+
+  if (type === "batch-chain-event") {
+    if (state.chainEvents.length < MAX_CHAIN_EVENTS_IN_REPORT) {
+      state.chainEvents = state.chainEvents.concat(payload.event);
+    } else {
+      state.droppedChainEvents += 1;
+    }
     scheduleRender();
     return;
   }
@@ -195,6 +342,8 @@ function startAllWorkers() {
   state.stopRequested = false;
   state.slimDataset = [];
   state.chainFocusDataset = [];
+  state.chainEvents = [];
+  state.droppedChainEvents = 0;
   state.workers = state.workers.map((worker) =>
     createWorkerSnapshotWithProfile(worker.id, worker.searchProfile),
   );
@@ -338,9 +487,24 @@ function bindEvents() {
     );
   });
 
+  document.querySelector("#export-benchmark-report")?.addEventListener("click", () => {
+    const report = buildBenchmarkReport();
+    if (report.totals.totalTurns === 0) {
+      return;
+    }
+
+    downloadTextFile(
+      createBenchmarkReportFilename(),
+      JSON.stringify(report, null, 2),
+      "application/json",
+    );
+  });
+
   document.querySelector("#clear-batch-dataset")?.addEventListener("click", () => {
     state.slimDataset = [];
     state.chainFocusDataset = [];
+    state.chainEvents = [];
+    state.droppedChainEvents = 0;
     rerender();
   });
 }

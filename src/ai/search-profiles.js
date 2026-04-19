@@ -5,24 +5,9 @@ export const SEARCH_PROFILES = Object.freeze([
     description: "Current default profile focused on larger chains and strong virtual fires.",
   },
   {
-    id: "balanced_v1",
-    label: "Balanced v1",
-    description: "Less extreme than the default, aiming for steadier stacking and cleaner shapes.",
-  },
-  {
-    id: "survival_v1",
-    label: "Survival v1",
-    description: "Prioritizes lower stacks and smoother surfaces to reduce topouts.",
-  },
-  {
-    id: "aggressive_chain_v1",
-    label: "Aggressive Chain v1",
-    description: "Pushes harder toward virtual large-chain opportunities even if the stack gets riskier.",
-  },
-  {
-    id: "long_horizon_v1",
-    label: "Long Horizon v1",
-    description: "Tries to preserve extendable shapes for longer before cashing in.",
+    id: "chain_builder_v4",
+    label: "Chain Builder v4",
+    description: "Experimental profile that rewards 10+ chain potential while guarding high stacks without firepower.",
   },
 ]);
 

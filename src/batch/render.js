@@ -1,5 +1,7 @@
 import { SEARCH_PROFILES } from "../ai/search-profiles.js";
 
+const HIGH_CHAIN_THRESHOLD = 7;
+
 function runnerStatusLabel(state) {
   if (state.stopRequested) {
     return "停止要求中";
@@ -36,7 +38,10 @@ function summaryFromState(state) {
     (sum, worker) => sum + worker.completedGames,
     0,
   );
-  const totalScore = state.workers.reduce((sum, worker) => sum + worker.score, 0);
+  const totalScore = state.workers.reduce(
+    (sum, worker) => sum + (worker.sessionScore ?? worker.score),
+    0,
+  );
   const bestChain = state.workers.reduce(
     (best, worker) => Math.max(best, worker.overallBestChain, worker.maxChains),
     0,
@@ -44,6 +49,21 @@ function summaryFromState(state) {
   const activeWorkers = state.workers.filter((worker) =>
     ["running", "game-over", "stop-requested"].includes(worker.status),
   ).length;
+  const chainHistogram = state.workers.reduce((histogram, worker) => {
+    for (const [chain, count] of Object.entries(worker.chainHistogram ?? {})) {
+      histogram[chain] = (histogram[chain] ?? 0) + count;
+    }
+    return histogram;
+  }, {});
+  const chainEvents7Plus = Object.entries(chainHistogram).reduce(
+    (sum, [chain, count]) =>
+      Number(chain) >= HIGH_CHAIN_THRESHOLD ? sum + count : sum,
+    0,
+  );
+  const chainEvents10Plus = Object.entries(chainHistogram).reduce(
+    (sum, [chain, count]) => (Number(chain) >= 10 ? sum + count : sum),
+    0,
+  );
 
   return {
     totalTurns,
@@ -53,7 +73,28 @@ function summaryFromState(state) {
     activeWorkers,
     slimDatasetSamples: state.slimDataset.length,
     chainFocusSamples: state.chainFocusDataset.length,
+    chainHistogram,
+    chainEvents7Plus,
+    chainEvents10Plus,
+    highChainEventSamples: state.chainEvents.length,
   };
+}
+
+function chainHistogramRowsMarkup(histogram) {
+  const observedChains = Object.keys(histogram).map((chain) => Number(chain));
+  const maxChain = Math.max(HIGH_CHAIN_THRESHOLD, ...observedChains);
+  const rows = [];
+
+  for (let chains = HIGH_CHAIN_THRESHOLD; chains <= maxChain; chains += 1) {
+    rows.push(`
+      <tr>
+        <th>${chains}</th>
+        <td>${histogram[String(chains)] ?? 0}</td>
+      </tr>
+    `);
+  }
+
+  return rows.join("");
 }
 
 function searchProfileOptions(selectedProfile) {
@@ -99,6 +140,21 @@ function workerCardMarkup(worker, controlsDisabled) {
       <div class="worker-note">
         <span>completed games: ${worker.completedGames}</span>
         <span>overall best: ${worker.overallBestChain}</span>
+      </div>
+      <div class="worker-note">
+        <span>7+ chains: ${
+          Object.entries(worker.chainHistogram ?? {}).reduce(
+            (sum, [chain, count]) =>
+              Number(chain) >= HIGH_CHAIN_THRESHOLD ? sum + count : sum,
+            0,
+          )
+        }</span>
+        <span>10+ chains: ${
+          Object.entries(worker.chainHistogram ?? {}).reduce(
+            (sum, [chain, count]) => (Number(chain) >= 10 ? sum + count : sum),
+            0,
+          )
+        }</span>
       </div>
 
       <label class="field worker-config-row">
@@ -210,6 +266,9 @@ export function renderBatchApp(root, state) {
             <button id="export-chain-focus-dataset" class="soft" ${
               state.chainFocusDataset.length > 0 ? "" : "disabled"
             }>Export 10+ Focus</button>
+            <button id="export-benchmark-report" class="soft" ${
+              summary.totalTurns > 0 ? "" : "disabled"
+            }>Export Benchmark</button>
             <button id="clear-batch-dataset" class="soft" ${
               state.slimDataset.length > 0 || state.chainFocusDataset.length > 0
                 ? ""
@@ -236,7 +295,7 @@ export function renderBatchApp(root, state) {
               <strong>${summary.totalCompletedGames}</strong>
             </div>
             <div class="metric-card">
-              <span class="metric-label">Current Total Score</span>
+              <span class="metric-label">Session Score</span>
               <strong>${summary.totalScore}</strong>
             </div>
             <div class="metric-card">
@@ -251,6 +310,35 @@ export function renderBatchApp(root, state) {
               <span class="metric-label">10+ Focus Samples</span>
               <strong>${summary.chainFocusSamples}</strong>
             </div>
+            <div class="metric-card">
+              <span class="metric-label">7+ Chain Events</span>
+              <strong>${summary.chainEvents7Plus}</strong>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">10+ Chain Events</span>
+              <strong>${summary.chainEvents10Plus}</strong>
+            </div>
+          </div>
+
+          <div class="chain-table-wrap">
+            <div class="worker-head">
+              <div>
+                <p class="panel-kicker">7+ Chain Histogram</p>
+                <h3>Chain Counts</h3>
+              </div>
+              <span class="status-chip">${summary.highChainEventSamples} events</span>
+            </div>
+            <table class="chain-table">
+              <thead>
+                <tr>
+                  <th>Chains</th>
+                  <th>Total Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${chainHistogramRowsMarkup(summary.chainHistogram)}
+              </tbody>
+            </table>
           </div>
         </section>
 

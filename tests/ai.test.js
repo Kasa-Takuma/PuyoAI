@@ -151,11 +151,11 @@ test("search AI preserves the selected search profile in its analysis settings",
     board,
     currentPair,
     nextQueue: [],
-    settings: { depth: 1, beamWidth: 24, searchProfile: "survival_v1" },
+    settings: { depth: 1, beamWidth: 24, searchProfile: "chain_builder_v4" },
   });
 
-  assert.equal(analysis.objective, "survival_v1");
-  assert.equal(analysis.settings.searchProfile, "survival_v1");
+  assert.equal(analysis.objective, "chain_builder_v4");
+  assert.equal(analysis.settings.searchProfile, "chain_builder_v4");
 });
 
 test("slim policy sample keeps only lightweight supervision fields", () => {
