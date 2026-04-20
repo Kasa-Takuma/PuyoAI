@@ -31,6 +31,13 @@ function workerStatusLabel(worker) {
 }
 
 function searchProfileShortLabel(profileId) {
+  if (typeof profileId === "string" && profileId.includes("+value@")) {
+    const [baseProfile, valueWeight] = profileId.split("+value@");
+    return `${searchProfileShortLabel(baseProfile)} + value ${formatValueWeight(
+      valueWeight,
+    )}`;
+  }
+
   if (typeof profileId === "string" && profileId.startsWith("chain_builder_")) {
     return profileId.replace("chain_builder_", "");
   }
@@ -40,6 +47,16 @@ function searchProfileShortLabel(profileId) {
     profileId ??
     "unknown"
   );
+}
+
+function formatValueWeight(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return String(value ?? 0);
+  }
+  return Math.abs(numeric) >= 1000
+    ? `${Math.round(numeric / 1000)}k`
+    : String(numeric);
 }
 
 function mergeHistogram(target, source = {}) {
@@ -85,7 +102,7 @@ function summaryFromState(state) {
   const chainEventsByProfile = {};
   const chainHistogramsByProfile = {};
   const chainHistogram = state.workers.reduce((histogram, worker) => {
-    const profile = worker.searchProfile || "unknown";
+    const profile = worker.runLabel || worker.searchProfile || "unknown";
     if (!profileOrder.includes(profile)) {
       profileOrder.push(profile);
     }
@@ -196,6 +213,13 @@ function searchProfileOptions(selectedProfile) {
   ).join("");
 }
 
+function valueAssistOptions(enabled) {
+  return `
+    <option value="off" ${enabled ? "" : "selected"}>Off</option>
+    <option value="on" ${enabled ? "selected" : ""}>On</option>
+  `;
+}
+
 function workerCardMarkup(worker, controlsDisabled) {
   return `
     <article class="worker-card">
@@ -253,6 +277,29 @@ function workerCardMarkup(worker, controlsDisabled) {
           ${searchProfileOptions(worker.searchProfile)}
         </select>
       </label>
+      <label class="field worker-config-row">
+        Value Assist
+        <select data-worker-use-value="${worker.id}" ${controlsDisabled}>
+          ${valueAssistOptions(worker.useValueModel)}
+        </select>
+      </label>
+      <label class="field worker-config-row">
+        Value Weight
+        <input
+          data-worker-value-weight="${worker.id}"
+          type="number"
+          min="0"
+          max="1000000"
+          step="10000"
+          value="${worker.valueWeight ?? 0}"
+          ${controlsDisabled}
+        />
+      </label>
+
+      <div class="worker-note">
+        <span>run: ${searchProfileShortLabel(worker.runLabel)}</span>
+        <span>assist: ${worker.useValueModel ? "on" : "off"}</span>
+      </div>
 
       <div class="rows-box">
         <span class="metric-label">Current Seed</span>
@@ -339,12 +386,30 @@ export function renderBatchApp(root, state) {
                 ${searchProfileOptions(state.aiSettings.searchProfile)}
               </select>
             </label>
+            <label class="field">
+              Bulk Value Assist
+              <select id="batch-use-value" ${controlsDisabled}>
+                ${valueAssistOptions(state.aiSettings.useValueModel)}
+              </select>
+            </label>
+            <label class="field">
+              Bulk Value Weight
+              <input
+                id="batch-value-weight"
+                type="number"
+                min="0"
+                max="1000000"
+                step="10000"
+                value="${state.aiSettings.valueWeight}"
+                ${controlsDisabled}
+              />
+            </label>
           </div>
 
           <div class="button-row">
             <button id="apply-search-profile-to-all" class="soft" ${
               state.running ? "disabled" : ""
-            }>Apply Profile To All</button>
+            }>Apply Bulk To All</button>
             <button id="start-all" class="accent" ${
               state.running ? "disabled" : ""
             }>Start All</button>

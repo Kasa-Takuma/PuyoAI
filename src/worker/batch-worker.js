@@ -1,4 +1,5 @@
 import { searchBestMove } from "../ai/search.js";
+import { loadSearchValueModel } from "../ai/value.js";
 import {
   createAiSnapshot,
   createChainFocusTrainingSample,
@@ -39,6 +40,22 @@ const BENCHMARK_FEATURE_KEYS = Object.freeze([
   "topVirtualChainSum",
   "topVirtualScoreSum",
 ]);
+
+function valueRunLabel(aiSettings = {}) {
+  const searchProfile = aiSettings.searchProfile ?? "unknown";
+  return aiSettings.useValueModel
+    ? `${searchProfile}+value@${aiSettings.valueWeight ?? 0}`
+    : searchProfile;
+}
+
+function aiSettingsSnapshot(aiSettings, runLabel = valueRunLabel(aiSettings)) {
+  return {
+    searchProfile: aiSettings.searchProfile ?? "unknown",
+    useValueModel: Boolean(aiSettings.useValueModel),
+    valueWeight: aiSettings.valueWeight ?? 0,
+    runLabel,
+  };
+}
 
 function nextTick() {
   return new Promise((resolve) => {
@@ -81,9 +98,14 @@ function topCandidateSummary(candidates, limit = 3) {
   return (candidates ?? []).slice(0, limit).map((candidate) => ({
     actionKey: candidate.actionKey,
     searchScore: Math.round(candidate.searchScore),
+    valueScore:
+      typeof candidate.valueScore === "number"
+        ? Math.round(candidate.valueScore)
+        : undefined,
     immediateChains: candidate.immediateChains,
     immediateScore: candidate.immediateScore,
     bestDepth: candidate.bestDepth,
+    predictedMaxChain: candidate.valuePrediction?.maxChain,
   }));
 }
 
@@ -202,6 +224,10 @@ async function runBatchLoop({
   activeRunId += 1;
   const runId = activeRunId;
   stopRequested = false;
+  const runLabel = valueRunLabel(aiSettings);
+  const valueModel = aiSettings.useValueModel
+    ? await loadSearchValueModel()
+    : null;
 
   let completedGames = 0;
   let totalTurns = 0;
@@ -237,7 +263,7 @@ async function runBatchLoop({
       score: 0,
       maxChains: 0,
       currentSeed,
-      searchProfile: aiSettings.searchProfile,
+      ...aiSettingsSnapshot(aiSettings, runLabel),
       lastSearchMs: 0,
       sessionScore,
       chainEventsTotal,
@@ -252,6 +278,9 @@ async function runBatchLoop({
         currentPair: currentState.currentPair,
         nextQueue: currentState.nextQueue,
         settings: currentState.aiSettings,
+        turn: currentState.turn,
+        totalScore: currentState.totalScore,
+        valueModel,
       });
       slimDatasetBuffer.push(createSlimPolicyTrainingSample(snapshot, analysis));
       if (slimDatasetBuffer.length >= DATASET_FLUSH_SIZE) {
@@ -322,7 +351,7 @@ async function runBatchLoop({
         incrementHistogram(chainHistogram, result.totalChains);
         postChainEvent(workerId, {
           workerId,
-          searchProfile: aiSettings.searchProfile,
+          ...aiSettingsSnapshot(aiSettings, runLabel),
           seed: currentSeed,
           game: completedGames + 1,
           turn: currentState.turn - 1,
@@ -397,7 +426,7 @@ async function runBatchLoop({
         score: currentState.totalScore,
         maxChains: currentState.maxChains,
         currentSeed,
-        searchProfile: aiSettings.searchProfile,
+        ...aiSettingsSnapshot(aiSettings, runLabel),
         lastSearchMs: analysis.elapsedMs,
         sessionScore,
         chainEventsTotal,
@@ -443,7 +472,7 @@ async function runBatchLoop({
       score: 0,
       maxChains: 0,
       currentSeed: `${seedBase}:worker-${workerId}:game-${completedGames + 1}`,
-      searchProfile: aiSettings.searchProfile,
+      ...aiSettingsSnapshot(aiSettings, runLabel),
       lastSearchMs: 0,
       sessionScore,
       chainEventsTotal,
@@ -480,7 +509,7 @@ async function runBatchLoop({
     score: currentState ? currentState.totalScore : 0,
     maxChains: currentState ? currentState.maxChains : 0,
     currentSeed,
-    searchProfile: aiSettings.searchProfile,
+    ...aiSettingsSnapshot(aiSettings, runLabel),
     lastSearchMs: 0,
     sessionScore,
     chainEventsTotal,
@@ -505,7 +534,7 @@ self.addEventListener("message", (event) => {
         score: 0,
         maxChains: 0,
         currentSeed: "",
-        searchProfile: payload?.aiSettings?.searchProfile ?? "",
+        ...aiSettingsSnapshot(payload?.aiSettings ?? {}),
         lastSearchMs: 0,
         sessionScore: 0,
         chainEventsTotal: 0,

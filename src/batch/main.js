@@ -6,6 +6,7 @@ import {
   serializeAiDataset,
 } from "../ai/dataset.js";
 import { DEFAULT_SEARCH_PROFILE_ID } from "../ai/search-profiles.js";
+import { normalizeValueAssistSettings } from "../ai/value.js";
 import { APP_VERSION } from "../app/version.js";
 import { renderBatchApp } from "./render.js";
 
@@ -30,6 +31,7 @@ function normalizeParallelCount(value) {
 }
 
 function normalizeAiSettings(settings) {
+  const valueAssist = normalizeValueAssistSettings(settings);
   return {
     depth: Math.max(1, Math.min(4, Number.parseInt(settings.depth, 10) || 3)),
     beamWidth: Math.max(4, Math.min(96, Number.parseInt(settings.beamWidth, 10) || 24)),
@@ -37,13 +39,25 @@ function normalizeAiSettings(settings) {
       typeof settings?.searchProfile === "string" && settings.searchProfile.length > 0
         ? settings.searchProfile
         : DEFAULT_SEARCH_PROFILE_ID,
+    useValueModel: valueAssist.useValueModel,
+    valueWeight: valueAssist.valueWeight,
   };
+}
+
+function valueRunLabel(settings) {
+  const normalized = normalizeAiSettings(settings);
+  return normalized.useValueModel
+    ? `${normalized.searchProfile}+value@${normalized.valueWeight}`
+    : normalized.searchProfile;
 }
 
 function createWorkerSnapshot(id) {
   return {
     id,
     searchProfile: DEFAULT_SEARCH_PROFILE_ID,
+    useValueModel: false,
+    valueWeight: normalizeValueAssistSettings({}).valueWeight,
+    runLabel: DEFAULT_SEARCH_PROFILE_ID,
     status: "idle",
     turn: 0,
     score: 0,
@@ -61,13 +75,22 @@ function createWorkerSnapshot(id) {
   };
 }
 
-function createWorkerSnapshotWithProfile(id, searchProfile = DEFAULT_SEARCH_PROFILE_ID) {
+function createWorkerSnapshotWithProfile(
+  id,
+  searchProfile = DEFAULT_SEARCH_PROFILE_ID,
+  overrides = {},
+) {
+  const settings = normalizeAiSettings({
+    searchProfile,
+    useValueModel: overrides.useValueModel,
+    valueWeight: overrides.valueWeight,
+  });
   return {
     ...createWorkerSnapshot(id),
-    searchProfile:
-      typeof searchProfile === "string" && searchProfile.length > 0
-        ? searchProfile
-        : DEFAULT_SEARCH_PROFILE_ID,
+    searchProfile: settings.searchProfile,
+    useValueModel: settings.useValueModel,
+    valueWeight: settings.valueWeight,
+    runLabel: valueRunLabel(settings),
   };
 }
 
@@ -76,7 +99,11 @@ function createBatchState() {
   return {
     parallelCount,
     seedBase: "batch",
-    aiSettings: { depth: 3, beamWidth: 24, searchProfile: DEFAULT_SEARCH_PROFILE_ID },
+    aiSettings: normalizeAiSettings({
+      depth: 3,
+      beamWidth: 24,
+      searchProfile: DEFAULT_SEARCH_PROFILE_ID,
+    }),
     running: false,
     stopRequested: false,
     slimDataset: [],
@@ -161,7 +188,7 @@ function buildProfileSummaries(workers) {
   const summaries = new Map();
 
   for (const worker of workers) {
-    const profile = worker.searchProfile || "unknown";
+    const profile = worker.runLabel || worker.searchProfile || "unknown";
     const summary =
       summaries.get(profile) ??
       {
@@ -335,7 +362,7 @@ function buildBenchmarkReport() {
 
   return {
     kind: "puyoai_batch_benchmark_summary",
-    version: 3,
+    version: 4,
     appVersion: APP_VERSION,
     createdAt: new Date().toISOString(),
     thresholds: {
@@ -348,9 +375,14 @@ function buildBenchmarkReport() {
       depth: state.aiSettings.depth,
       beamWidth: state.aiSettings.beamWidth,
       bulkSearchProfile: state.aiSettings.searchProfile,
+      bulkUseValueModel: state.aiSettings.useValueModel,
+      bulkValueWeight: state.aiSettings.valueWeight,
       workerProfiles: state.workers.map((worker) => ({
         workerId: worker.id,
         searchProfile: worker.searchProfile,
+        useValueModel: worker.useValueModel,
+        valueWeight: worker.valueWeight,
+        runLabel: worker.runLabel,
       })),
     },
     totals: {
@@ -381,15 +413,21 @@ function buildBenchmarkReport() {
     ),
     eventProfileSummaries: aggregateChainEvents(
       chainEvents,
-      (event) => event.searchProfile ?? "unknown",
+      (event) => event.runLabel ?? event.searchProfile ?? "unknown",
     ),
     eventProfileBucketSummaries: aggregateChainEvents(
       chainEvents,
-      (event) => `${event.searchProfile ?? "unknown"}:${highChainBucket(event.chains)}`,
+      (event) =>
+        `${event.runLabel ?? event.searchProfile ?? "unknown"}:${highChainBucket(
+          event.chains,
+        )}`,
     ),
     workers: state.workers.map((worker) => ({
       workerId: worker.id,
       searchProfile: worker.searchProfile,
+      useValueModel: worker.useValueModel,
+      valueWeight: worker.valueWeight,
+      runLabel: worker.runLabel,
       status: worker.status,
       currentGame: worker.currentGame,
       completedGames: worker.completedGames,
@@ -487,7 +525,10 @@ function syncWorkers() {
     const previous = state.workers.find((worker) => worker.id === index + 1);
     return (
       previous ??
-      createWorkerSnapshotWithProfile(index + 1, state.aiSettings.searchProfile)
+      createWorkerSnapshotWithProfile(index + 1, state.aiSettings.searchProfile, {
+        useValueModel: state.aiSettings.useValueModel,
+        valueWeight: state.aiSettings.valueWeight,
+      })
     );
   });
 }
@@ -502,7 +543,10 @@ function startAllWorkers() {
   state.chainEvents = [];
   state.droppedChainEvents = 0;
   state.workers = state.workers.map((worker) =>
-    createWorkerSnapshotWithProfile(worker.id, worker.searchProfile),
+    createWorkerSnapshotWithProfile(worker.id, worker.searchProfile, {
+      useValueModel: worker.useValueModel,
+      valueWeight: worker.valueWeight,
+    }),
   );
   rerender();
 
@@ -516,6 +560,8 @@ function startAllWorkers() {
         aiSettings: normalizeAiSettings({
           ...state.aiSettings,
           searchProfile: workerConfig?.searchProfile ?? state.aiSettings.searchProfile,
+          useValueModel: workerConfig?.useValueModel ?? state.aiSettings.useValueModel,
+          valueWeight: workerConfig?.valueWeight ?? state.aiSettings.valueWeight,
         }),
         presetId: "sandbox",
       },
@@ -569,10 +615,26 @@ function bindEvents() {
   });
 
   document.querySelector("#batch-search-profile")?.addEventListener("change", (event) => {
-    state.aiSettings = {
+    state.aiSettings = normalizeAiSettings({
       ...state.aiSettings,
       searchProfile: event.target.value,
-    };
+    });
+    rerender();
+  });
+
+  document.querySelector("#batch-use-value")?.addEventListener("change", (event) => {
+    state.aiSettings = normalizeAiSettings({
+      ...state.aiSettings,
+      useValueModel: event.target.value,
+    });
+    rerender();
+  });
+
+  document.querySelector("#batch-value-weight")?.addEventListener("change", (event) => {
+    state.aiSettings = normalizeAiSettings({
+      ...state.aiSettings,
+      valueWeight: event.target.value,
+    });
     rerender();
   });
 
@@ -585,6 +647,9 @@ function bindEvents() {
       state.workers = state.workers.map((worker) => ({
         ...worker,
         searchProfile: state.aiSettings.searchProfile,
+        useValueModel: state.aiSettings.useValueModel,
+        valueWeight: state.aiSettings.valueWeight,
+        runLabel: valueRunLabel(state.aiSettings),
       }));
       rerender();
     });
@@ -601,6 +666,56 @@ function bindEvents() {
       }
       setWorkerSnapshot(workerId, {
         searchProfile: event.target.value,
+        runLabel: valueRunLabel({
+          ...worker,
+          searchProfile: event.target.value,
+        }),
+      });
+      rerender();
+    });
+  });
+
+  document.querySelectorAll("[data-worker-use-value]").forEach((element) => {
+    element.addEventListener("change", (event) => {
+      if (state.running) {
+        return;
+      }
+      const workerId = Number.parseInt(event.target.dataset.workerUseValue, 10);
+      const worker = state.workers.find((entry) => entry.id === workerId);
+      if (!worker) {
+        return;
+      }
+      const next = normalizeAiSettings({
+        ...worker,
+        useValueModel: event.target.value,
+      });
+      setWorkerSnapshot(workerId, {
+        useValueModel: next.useValueModel,
+        valueWeight: next.valueWeight,
+        runLabel: valueRunLabel(next),
+      });
+      rerender();
+    });
+  });
+
+  document.querySelectorAll("[data-worker-value-weight]").forEach((element) => {
+    element.addEventListener("change", (event) => {
+      if (state.running) {
+        return;
+      }
+      const workerId = Number.parseInt(event.target.dataset.workerValueWeight, 10);
+      const worker = state.workers.find((entry) => entry.id === workerId);
+      if (!worker) {
+        return;
+      }
+      const next = normalizeAiSettings({
+        ...worker,
+        valueWeight: event.target.value,
+      });
+      setWorkerSnapshot(workerId, {
+        useValueModel: next.useValueModel,
+        valueWeight: next.valueWeight,
+        runLabel: valueRunLabel(next),
       });
       rerender();
     });

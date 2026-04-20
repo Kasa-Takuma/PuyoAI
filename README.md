@@ -68,7 +68,8 @@ The right-side AI panel supports:
 The batch runner page is a field-less parallel execution mode.
 
 - choose `Parallel Count`, `Depth`, `Beam Width`, and `Seed Base`
-- choose a `Bulk Search Profile`, or assign a different `Search Profile` to each worker
+- choose a `Bulk Search Profile` and `Bulk Value Assist`, or assign a different `Search Profile`, `Value Assist`, and `Value Weight` to each worker
+- `Apply Bulk To All`: copy the bulk profile and value-assist settings into every worker
 - `Start All`: launch all workers at once
 - `Stop All`: request all workers to stop together
 - `Export Slim`: download all-turn lightweight policy samples
@@ -76,7 +77,7 @@ The batch runner page is a field-less parallel execution mode.
 - `Export Value`: download value-learning samples with state, search summary, immediate result, and 12/24/48-turn future labels
 - `Export Benchmark`: download a compact benchmark summary with per-profile totals, per-worker totals, and 7+ chain events
 - each worker card shows current turn, score, max chains, worker total turns, and completed games
-- the summary panel shows total turns across all workers and a compact 7+ chain histogram
+- the summary panel shows total turns across all workers and a compact 7+ chain histogram split by run label, so assisted and non-assisted workers can be compared directly
 - benchmark exports include lightweight pre-fire features for 7+ chain events, plus bucket/profile aggregate averages for evaluation tuning
 - value exports are intended for Phase 2 value-function learning: raw board state plus future max-chain, large-chain hit counts, score gain, and topout labels
 
