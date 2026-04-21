@@ -106,6 +106,35 @@ baseline:
 npm run tune:v9b -- --only 3,8 --turns 8000 --games 4 --depth 3 --beam-width 16 --seed v9b-tune
 ```
 
+## Search Profile Evolution
+
+For repeated automatic tuning from the current `chain_builder_v11` baseline, use
+the staged evolution runner:
+
+```bash
+npm run evolve:v11 -- \
+  --generations 20 \
+  --population 36 \
+  --stage1-turns 3000 \
+  --stage2-turns 5000 \
+  --stage3-turns 10000 \
+  --parallel-profiles 4 \
+  --depth 3 \
+  --beam-width 24
+```
+
+Each generation creates 36 new candidate profiles, keeps `chain_builder_v11`,
+the current champion, and recent hall-of-fame candidates as protected
+baselines, then runs three elimination stages. Stage seed sets are randomized
+for every generation and stage, but every candidate in the same comparison uses
+the same seed set for fairness. Candidate configs are de-duplicated by weight
+hash and distance so later generations do not keep testing the same v11
+neighborhood when the champion has not changed.
+
+The runner writes `log/puyoai-evolution-report-*.json` as it goes. Only promote
+a result into `search-profiles.js` after a longer benchmark confirms it beats
+v11 on separate seeds.
+
 ## Learned Policy Training
 
 The search AI remains the main baseline. The `training/` package is a separate supervised-learning pipeline that imitates search outputs from exported datasets.
