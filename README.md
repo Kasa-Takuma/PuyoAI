@@ -97,6 +97,8 @@ For a more reliable sweep, raise `--turns`, `--candidates`, and usually use
 `log/puyoai-tuning-report-*.json` and include the best temporary profile config.
 `chain_builder_v11` is the promoted `tuned_v9b_008` candidate from the first
 v9b tuning run.
+`chain_builder_v12` is the promoted generation-8 evolution champion
+`evolve_chain_builder_v11_g008_c007_e08280`.
 
 To re-benchmark promising candidates from the same tuning seed, use `--only`.
 For example, this reruns only `tuned_v9b_003` and `tuned_v9b_008` plus the v9b

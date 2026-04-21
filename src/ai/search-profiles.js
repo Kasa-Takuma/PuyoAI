@@ -59,6 +59,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v11",
     description: "Promotes tuned_v9b_008: higher 10+/11+ frequency from automatic v9b tuning.",
   },
+  {
+    id: "chain_builder_v12",
+    label: "Chain Builder v12",
+    description: "Promotes evolution champion g008_c007: stronger 10+/11+/12+ pressure with broader mature-chain bias.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;
