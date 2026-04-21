@@ -60,6 +60,8 @@ function parseArgs(argv) {
     minDistance: 0.006,
     seed: "auto",
     output: null,
+    resumeReport: null,
+    baseProfileExplicit: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -67,6 +69,7 @@ function parseArgs(argv) {
     const next = argv[index + 1];
     if (arg === "--base-profile") {
       args.baseProfile = next || args.baseProfile;
+      args.baseProfileExplicit = true;
       index += 1;
     } else if (arg === "--generations") {
       args.generations = Math.max(1, Number.parseInt(next, 10) || args.generations);
@@ -134,6 +137,9 @@ function parseArgs(argv) {
     } else if (arg === "--output") {
       args.output = next || args.output;
       index += 1;
+    } else if (arg === "--resume-report") {
+      args.resumeReport = next || args.resumeReport;
+      index += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -151,7 +157,8 @@ function printHelp() {
 
 Options:
   --base-profile ID          Starting profile. Default: chain_builder_v11
-  --generations N           Number of evolution generations. Default: 10
+  --generations N           Number of evolution generations. With --resume-report,
+                            this many additional generations are run. Default: 10
   --population N            New mutated candidates per generation. Default: 36
   --stage1-turns N          Turns per candidate in stage 1. Default: 3000
   --stage2-turns N          Turns per candidate in stage 2. Default: 5000
@@ -165,6 +172,7 @@ Options:
   --depth N                 Search depth. Default: 3
   --beam-width N            Beam width. Default: 24
   --seed TEXT|auto          Run seed. auto creates a random seed. Default: auto
+  --resume-report PATH      Continue from a previous evolution report.
   --output PATH             JSON report path. Default: log/puyoai-evolution-report-<iso>.json`);
 }
 
@@ -745,20 +753,170 @@ function createRootSeed(seedArg) {
   return seedArg === "auto" ? crypto.randomUUID() : seedArg;
 }
 
+function reportSettings(args, rootSeed) {
+  const { baseProfileExplicit, ...settings } = args;
+  return { ...settings, seed: rootSeed };
+}
+
+function ensureOutputDoesNotOverwriteResume({ resumeReportPath, outputPath }) {
+  if (!resumeReportPath) {
+    return;
+  }
+  if (path.resolve(resumeReportPath) === path.resolve(outputPath)) {
+    throw new Error(
+      "--output must be different from --resume-report so the source report is preserved.",
+    );
+  }
+}
+
+function readResumeReport(reportPath) {
+  if (!reportPath) {
+    return null;
+  }
+  const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  if (report.kind !== "puyoai_search_profile_evolution_report") {
+    throw new Error(`Unsupported resume report kind: ${report.kind ?? "unknown"}`);
+  }
+  if (!report.champion) {
+    throw new Error("Resume report does not include a champion.");
+  }
+  return report;
+}
+
+function candidateFromReportEntry(entry, fallbackBaseProfileId) {
+  if (!entry) {
+    return null;
+  }
+  const profileConfig = entry.profileConfig ?? null;
+  const baseProfileId =
+    entry.baseProfileId ??
+    profileConfig?.baseProfileId ??
+    fallbackBaseProfileId;
+  return {
+    id: entry.id ?? profileConfig?.id ?? baseProfileId,
+    baseProfileId,
+    parentId: entry.parentId ?? null,
+    source: entry.source ?? "resume",
+    profileConfig,
+    lastObjectiveScore: entry.lastObjectiveScore,
+  };
+}
+
+function lastCompletedGeneration(report) {
+  return Math.max(
+    0,
+    ...(report.generations ?? []).map((record) => record.generation ?? 0),
+  );
+}
+
+function resumedStagnation(report) {
+  const generations = report.generations ?? [];
+  let count = 0;
+  for (let index = generations.length - 1; index >= 0; index -= 1) {
+    if (generations[index].championChanged) {
+      break;
+    }
+    count += 1;
+  }
+  return count;
+}
+
+function addProfileToSeen({ profileConfig, baseProfileId, seenHashes, seenVectors }) {
+  const hash = profileHash(profileConfig, baseProfileId);
+  if (!seenHashes.has(hash)) {
+    seenHashes.add(hash);
+    seenVectors.push(profileVector(profileConfig, baseProfileId));
+  }
+}
+
+function restoreSeenProfiles({ report, baseProfileId, seenHashes, seenVectors }) {
+  addProfileToSeen({
+    profileConfig: null,
+    baseProfileId,
+    seenHashes,
+    seenVectors,
+  });
+
+  const addEntry = (entry) => {
+    const profileConfig = entry?.profileConfig ?? null;
+    if (!profileConfig) {
+      return;
+    }
+    addProfileToSeen({
+      profileConfig,
+      baseProfileId: profileConfig.baseProfileId ?? baseProfileId,
+      seenHashes,
+      seenVectors,
+    });
+  };
+
+  addEntry(report.champion);
+  for (const entry of report.hallOfFame ?? []) {
+    addEntry(entry);
+  }
+  for (const generation of report.generations ?? []) {
+    for (const entry of generation.generated ?? []) {
+      addEntry(entry);
+    }
+    for (const stage of generation.stages ?? []) {
+      for (const result of stage.top ?? []) {
+        addEntry(result);
+      }
+    }
+  }
+}
+
 async function runMain() {
   const args = parseArgs(process.argv.slice(2));
+  const resumeReport = readResumeReport(args.resumeReport);
+  if (resumeReport && !args.baseProfileExplicit) {
+    args.baseProfile =
+      resumeReport.settings?.baseProfile ??
+      resumeReport.champion?.baseProfileId ??
+      resumeReport.champion?.profileConfig?.baseProfileId ??
+      args.baseProfile;
+  }
   const rootSeed = createRootSeed(args.seed);
   const rng = createRng(rootSeed);
   const outputPath = args.output ?? defaultOutputPath();
+  ensureOutputDoesNotOverwriteResume({
+    resumeReportPath: args.resumeReport,
+    outputPath,
+  });
   const startedAt = performance.now();
   const baseline = createBaselineCandidate(args.baseProfile);
-  let champion = baseline;
-  let championStage3Summary = null;
-  let stagnation = 0;
-  let hallOfFame = [];
-  const seenHashes = new Set([profileHash(null, args.baseProfile)]);
-  const seenVectors = [profileVector(null, args.baseProfile)];
-  const generations = [];
+  let champion =
+    candidateFromReportEntry(resumeReport?.champion, args.baseProfile) ?? baseline;
+  let championStage3Summary =
+    resumeReport?.champion?.lastStage3Summary ??
+    resumeReport?.generations?.at(-1)?.stage3ChampionSummary ??
+    null;
+  let stagnation = resumeReport ? resumedStagnation(resumeReport) : 0;
+  let hallOfFame = (resumeReport?.hallOfFame ?? [])
+    .map((entry) => candidateFromReportEntry(entry, args.baseProfile))
+    .filter(Boolean)
+    .slice(0, args.hallOfFame);
+  const seenHashes = new Set();
+  const seenVectors = [];
+  if (resumeReport) {
+    restoreSeenProfiles({
+      report: resumeReport,
+      baseProfileId: args.baseProfile,
+      seenHashes,
+      seenVectors,
+    });
+  } else {
+    addProfileToSeen({
+      profileConfig: null,
+      baseProfileId: args.baseProfile,
+      seenHashes,
+      seenVectors,
+    });
+  }
+  const completedGeneration = resumeReport ? lastCompletedGeneration(resumeReport) : 0;
+  const startGeneration = completedGeneration + 1;
+  const endGeneration = completedGeneration + args.generations;
+  const generations = resumeReport ? [...(resumeReport.generations ?? [])] : [];
   const report = {
     kind: "puyoai_search_profile_evolution_report",
     version: 1,
@@ -766,10 +924,19 @@ async function runMain() {
     rootSeed,
     objective:
       "evolve search profile weights with random fair seed sets, staged elimination, protected baselines, and strict champion promotion",
-    settings: { ...args, seed: rootSeed },
+    settings: reportSettings(args, rootSeed),
+    resumedFrom: resumeReport
+      ? {
+          path: args.resumeReport,
+          rootSeed: resumeReport.rootSeed,
+          completedGeneration,
+          champion: resumeReport.champion?.id ?? null,
+          createdAt: resumeReport.createdAt ?? null,
+        }
+      : null,
     tunables: TUNABLES,
-    champion: null,
-    hallOfFame: [],
+    champion: resumeReport?.champion ?? null,
+    hallOfFame: resumeReport?.hallOfFame ?? [],
     generations,
   };
 
@@ -778,14 +945,18 @@ async function runMain() {
     baseProfileId: args.baseProfile,
     rootSeed,
     generations: args.generations,
+    startGeneration,
+    endGeneration,
     population: args.population,
     stageTurns: [args.stage1Turns, args.stage2Turns, args.stage3Turns],
     stageKeeps: [args.stage1Keep, args.stage2Keep],
     parallelProfiles: args.parallelProfiles,
+    resumeReport: args.resumeReport,
+    resumedChampion: resumeReport?.champion?.id ?? null,
     output: outputPath,
   });
 
-  for (let generation = 1; generation <= args.generations; generation += 1) {
+  for (let generation = startGeneration; generation <= endGeneration; generation += 1) {
     const generated = createGenerationCandidates({
       args,
       generation,

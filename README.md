@@ -137,6 +137,24 @@ The runner writes `log/puyoai-evolution-report-*.json` as it goes. Only promote
 a result into `search-profiles.js` after a longer benchmark confirms it beats
 v11 on separate seeds.
 
+To continue from the latest completed generation in a previous report, pass
+`--resume-report`. The original report is left untouched; a new report is
+written with the old generation history plus the new generations. With resume,
+`--generations` means the number of additional generations to run.
+
+```bash
+npm run evolve:v11 -- \
+  --resume-report log/puyoai-evolution-report-2026-04-20T16-19-01.689Z.json \
+  --generations 10 \
+  --population 24 \
+  --stage1-turns 3000 \
+  --stage2-turns 5000 \
+  --stage3-turns 10000 \
+  --parallel-profiles 4 \
+  --depth 3 \
+  --beam-width 24
+```
+
 ## Learned Policy Training
 
 The search AI remains the main baseline. The `training/` package is a separate supervised-learning pipeline that imitates search outputs from exported datasets.
