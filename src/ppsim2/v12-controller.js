@@ -13,10 +13,20 @@ const SEARCH_SETTINGS = Object.freeze({
   searchProfile: "chain_builder_v12",
 });
 const AUTO_INTERVAL_MS = 160;
+const LIMITED_HORIZONTAL_MOVE_DELAY_MS = 90;
 
 let autoEnabled = false;
 let autoTimer = null;
 let aiBusy = false;
+let horizontalMoveLimited = false;
+
+class MovementError extends Error {
+  constructor(message, phase) {
+    super(message);
+    this.name = "MovementError";
+    this.phase = phase;
+  }
+}
 
 function aiStatus(text) {
   const element = document.getElementById("ai-status");
@@ -36,6 +46,13 @@ function setStepButtonDisabled(disabled) {
   const button = document.getElementById("ai-step-button");
   if (button) {
     button.disabled = Boolean(disabled);
+  }
+}
+
+function setMoveLimitButton(on) {
+  const button = document.getElementById("ai-move-limit-button");
+  if (button) {
+    button.textContent = on ? "横移動制限: ON" : "横移動制限: OFF";
   }
 }
 
@@ -69,11 +86,24 @@ function buildSearchPayload() {
   };
 }
 
-function applyAnalysis(analysis) {
-  const placement = convertActionToPpsimPlacement(analysis.bestAction);
-  if (!placement) {
-    throw new Error("PuyoAI v12 did not return a usable placement.");
-  }
+function sleep(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+async function waitForLimitedHorizontalMove() {
+  await nextFrame();
+  await sleep(LIMITED_HORIZONTAL_MOVE_DELAY_MS);
+}
+
+function ensurePpsimOperationHooks() {
   if (typeof window.__aiMoveHorizontal !== "function") {
     throw new Error("ppsim2 horizontal movement hook is not available.");
   }
@@ -86,17 +116,108 @@ function applyAnalysis(analysis) {
   if (typeof window.hardDrop !== "function") {
     throw new Error("ppsim2 hardDrop hook is not available.");
   }
+}
+
+function getActionKey(action) {
+  return action ? `${action.orientation}:${action.column}` : "";
+}
+
+function getBestCandidate(analysis) {
+  return (
+    analysis.candidates.find(
+      (candidate) => candidate.actionKey === analysis.bestActionKey,
+    ) ??
+    analysis.candidates[0] ??
+    null
+  );
+}
+
+function getOrderedCandidates(analysis) {
+  const ordered = [];
+  const seen = new Set();
+
+  const add = (action, candidate) => {
+    if (!action) {
+      return;
+    }
+    const key = getActionKey(action);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    ordered.push({ action, candidate });
+  };
+
+  add(analysis.bestAction, getBestCandidate(analysis));
+  for (const candidate of analysis.candidates) {
+    add(candidate.action, candidate);
+  }
+
+  return ordered;
+}
+
+async function applyAction(action) {
+  const placement = convertActionToPpsimPlacement(action);
+  if (!placement) {
+    throw new Error(
+      `PuyoAI v12 returned an unusable placement: ${summarizeAction(action)}`,
+    );
+  }
 
   rotateToTarget(placement.rotation);
-  moveToTargetX(placement.mainX);
+  await moveToTargetX(placement.mainX);
 
   window.hardDrop();
+}
+
+async function applyReachableCandidate(analysis) {
+  ensurePpsimOperationHooks();
+
+  const candidates = getOrderedCandidates(analysis);
+  if (candidates.length === 0) {
+    throw new Error("PuyoAI v12 did not return any usable candidates.");
+  }
+
+  const failures = [];
+  for (const entry of candidates) {
+    try {
+      if (failures.length > 0) {
+        aiStatus(`PuyoAI v12 再探索中... ${summarizeAction(entry.action)}`);
+      }
+      await applyAction(entry.action);
+      return {
+        action: entry.action,
+        candidate: entry.candidate,
+        fallbackCount: failures.length,
+      };
+    } catch (error) {
+      if (!(error instanceof MovementError) || error.phase !== "horizontal") {
+        throw error;
+      }
+      if (getGameState() !== "playing" || !getCurrentPuyo()) {
+        throw error;
+      }
+      console.warn(
+        "[PuyoAI v12] candidate blocked, trying fallback",
+        summarizeAction(entry.action),
+        error,
+      );
+      failures.push({ action: entry.action, error });
+    }
+  }
+
+  const lastFailure = failures.at(-1)?.error;
+  throw new Error(
+    `Reachable placement was not found${
+      lastFailure ? `: ${lastFailure.message}` : "."
+    }`,
+  );
 }
 
 function rotateToTarget(targetRotation) {
   let current = getCurrentPuyo();
   if (!current) {
-    throw new Error("No active puyo is available for rotation.");
+    throw new MovementError("No active puyo is available for rotation.", "state");
   }
 
   const normalizedTarget = ((targetRotation % 4) + 4) % 4;
@@ -110,41 +231,55 @@ function rotateToTarget(targetRotation) {
         : window.rotatePuyoCCW();
 
     if (!didRotate) {
-      throw new Error(
+      throw new MovementError(
         `Could not rotate from ${current.rotation} to ${normalizedTarget}.`,
+        "rotation",
       );
     }
 
     current = getCurrentPuyo();
     guard += 1;
     if (!current || guard > 4) {
-      throw new Error("Rotation did not converge.");
+      throw new MovementError("Rotation did not converge.", "rotation");
     }
   }
 }
 
-function moveToTargetX(targetX) {
+async function moveToTargetX(targetX) {
   let current = getCurrentPuyo();
   if (!current) {
-    throw new Error("No active puyo is available for horizontal movement.");
+    throw new MovementError(
+      "No active puyo is available for horizontal movement.",
+      "state",
+    );
   }
 
   let guard = 0;
   while (current.mainX !== targetX) {
     const step = targetX > current.mainX ? 1 : -1;
     if (!window.__aiMoveHorizontal(step)) {
-      throw new Error(`Could not move horizontally to column ${targetX + 1}.`);
+      throw new MovementError(
+        `Could not move horizontally to column ${targetX + 1}.`,
+        "horizontal",
+      );
     }
 
     current = getCurrentPuyo();
     guard += 1;
     if (!current || guard > 12) {
-      throw new Error("Horizontal movement did not converge.");
+      throw new MovementError(
+        "Horizontal movement did not converge.",
+        "horizontal",
+      );
+    }
+
+    if (horizontalMoveLimited) {
+      await waitForLimitedHorizontalMove();
     }
   }
 }
 
-function runPuyoAIInternal() {
+async function runPuyoAIInternal() {
   if (aiBusy) {
     return false;
   }
@@ -171,15 +306,12 @@ function runPuyoAIInternal() {
 
   try {
     const analysis = searchBestMove(payload);
-    applyAnalysis(analysis);
-
-    const bestCandidate =
-      analysis.candidates.find(
-        (candidate) => candidate.actionKey === analysis.bestActionKey,
-      ) ?? analysis.candidates[0];
-    const chains = bestCandidate?.immediateChains ?? 0;
+    const applied = await applyReachableCandidate(analysis);
+    const chains = applied.candidate?.immediateChains ?? 0;
+    const fallbackText =
+      applied.fallbackCount > 0 ? ` / 再探索${applied.fallbackCount}回` : "";
     aiStatus(
-      `PuyoAI v12 / ${summarizeAction(analysis.bestAction)} / ${chains}連 / ${Math.round(
+      `PuyoAI v12 / ${summarizeAction(applied.action)} / ${chains}連${fallbackText} / ${Math.round(
         analysis.elapsedMs,
       )}ms`,
     );
@@ -210,7 +342,7 @@ function scheduleAutoTick() {
     autoTimer = null;
   }
 
-  autoTimer = window.setTimeout(() => {
+  autoTimer = window.setTimeout(async () => {
     autoTimer = null;
     if (!autoEnabled) {
       return;
@@ -225,7 +357,7 @@ function scheduleAutoTick() {
     }
 
     if (!aiBusy && gameState === "playing" && getCurrentPuyo()) {
-      runPuyoAIInternal();
+      await runPuyoAIInternal();
     } else if (gameState !== "playing") {
       aiStatus("PuyoAI v12 待機中");
     }
@@ -241,6 +373,16 @@ window.PuyoAI = {
 
 window.runPuyoAI = function runPuyoAI() {
   return runPuyoAIInternal();
+};
+
+window.toggleAIMoveLimit = function toggleAIMoveLimit() {
+  horizontalMoveLimited = !horizontalMoveLimited;
+  setMoveLimitButton(horizontalMoveLimited);
+  aiStatus(
+    horizontalMoveLimited
+      ? "横移動制限 ON: 1マスずつ描画します"
+      : "横移動制限 OFF: 最速で横移動します",
+  );
 };
 
 window.toggleAIAuto = function toggleAIAuto() {
@@ -261,6 +403,7 @@ window.toggleAIAuto = function toggleAIAuto() {
 
 function initializeAiControls() {
   setAutoButton(false);
+  setMoveLimitButton(false);
   setStepButtonDisabled(false);
   aiStatus("PuyoAI v12 待機中");
 }
