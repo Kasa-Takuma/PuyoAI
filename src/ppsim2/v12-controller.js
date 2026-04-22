@@ -74,19 +74,74 @@ function applyAnalysis(analysis) {
   if (!placement) {
     throw new Error("PuyoAI v12 did not return a usable placement.");
   }
-  if (typeof window.__aiApplyPlacement !== "function") {
-    throw new Error("ppsim2 placement hook is not available.");
+  if (typeof window.__aiMoveHorizontal !== "function") {
+    throw new Error("ppsim2 horizontal movement hook is not available.");
+  }
+  if (
+    typeof window.rotatePuyoCW !== "function" ||
+    typeof window.rotatePuyoCCW !== "function"
+  ) {
+    throw new Error("ppsim2 rotation hooks are not available.");
   }
   if (typeof window.hardDrop !== "function") {
     throw new Error("ppsim2 hardDrop hook is not available.");
   }
 
-  const placed = window.__aiApplyPlacement(placement.mainX, placement.rotation);
-  if (!placed) {
-    throw new Error("ppsim2 rejected the target placement.");
-  }
+  rotateToTarget(placement.rotation);
+  moveToTargetX(placement.mainX);
 
   window.hardDrop();
+}
+
+function rotateToTarget(targetRotation) {
+  let current = getCurrentPuyo();
+  if (!current) {
+    throw new Error("No active puyo is available for rotation.");
+  }
+
+  const normalizedTarget = ((targetRotation % 4) + 4) % 4;
+  let guard = 0;
+  while (current.rotation !== normalizedTarget) {
+    const clockwiseDistance = (normalizedTarget - current.rotation + 4) % 4;
+    const counterClockwiseDistance = (current.rotation - normalizedTarget + 4) % 4;
+    const didRotate =
+      clockwiseDistance <= counterClockwiseDistance
+        ? window.rotatePuyoCW()
+        : window.rotatePuyoCCW();
+
+    if (!didRotate) {
+      throw new Error(
+        `Could not rotate from ${current.rotation} to ${normalizedTarget}.`,
+      );
+    }
+
+    current = getCurrentPuyo();
+    guard += 1;
+    if (!current || guard > 4) {
+      throw new Error("Rotation did not converge.");
+    }
+  }
+}
+
+function moveToTargetX(targetX) {
+  let current = getCurrentPuyo();
+  if (!current) {
+    throw new Error("No active puyo is available for horizontal movement.");
+  }
+
+  let guard = 0;
+  while (current.mainX !== targetX) {
+    const step = targetX > current.mainX ? 1 : -1;
+    if (!window.__aiMoveHorizontal(step)) {
+      throw new Error(`Could not move horizontally to column ${targetX + 1}.`);
+    }
+
+    current = getCurrentPuyo();
+    guard += 1;
+    if (!current || guard > 12) {
+      throw new Error("Horizontal movement did not converge.");
+    }
+  }
 }
 
 function runPuyoAIInternal() {

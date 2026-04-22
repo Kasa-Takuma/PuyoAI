@@ -1578,7 +1578,15 @@ window.getUpcomingPairs = function(count = 3) {
     return nextQueue.slice(queueIndex, queueIndex + count).map(pair => pair.slice());
 };
 
-// AI が狙った向き・位置へ一瞬で寄せてから落とすためのフック
+// AI が人間操作と同じ横移動判定を通すためのフック
+window.__aiMoveHorizontal = function(dx) {
+    if (gameState !== 'playing' || !currentPuyo) return false;
+    const step = Math.sign(Number(dx) || 0);
+    if (step !== -1 && step !== 1) return false;
+    return movePuyo(step, 0);
+};
+
+// 互換用: AI が狙った向き・位置へ一瞬で寄せてから落とすためのフック
 window.__aiApplyPlacement = function(mainX, rotation) {
     if (gameState !== 'playing' || !currentPuyo) return false;
 
