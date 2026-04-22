@@ -1,4 +1,4 @@
-const CACHE_NAME = "puyoai-shell-v29";
+const CACHE_NAME = "puyoai-shell-v30";
 
 const APP_SHELL = [
   "./",
@@ -24,11 +24,23 @@ const APP_SHELL = [
   "./src/ai/search-profiles.js",
   "./src/ai/search.js",
   "./src/ai/dataset.js",
+  "./src/ppsim2/adapter.js",
+  "./src/ppsim2/v12-controller.js",
   "./models/manifest.json",
   "./models/policy_mlp.web.json",
   "./models/value_mlp.web.json",
   "./src/worker/ai-worker.js",
   "./src/worker/batch-worker.js",
+  "./ppsim2/",
+  "./ppsim2/index.html",
+  "./ppsim2/style.css",
+  "./ppsim2/online.css",
+  "./ppsim2/puyoSim.js",
+  "./ppsim2/online.js",
+  "./ppsim2/manifest.json",
+  "./ppsim2/apple-touch-icon.png",
+  "./ppsim2/android-icon-192x192.png",
+  "./ppsim2/android-icon-512x512.png",
 ];
 
 self.addEventListener("install", (event) => {

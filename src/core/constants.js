@@ -13,6 +13,7 @@ export const COLORS = Object.freeze({
   GREEN: "G",
   BLUE: "B",
   YELLOW: "Y",
+  GARBAGE: "O",
 });
 
 export const PLAYABLE_COLORS = [
@@ -41,6 +42,7 @@ export const COLOR_LABELS = Object.freeze({
   [COLORS.GREEN]: "緑",
   [COLORS.BLUE]: "青",
   [COLORS.YELLOW]: "黄",
+  [COLORS.GARBAGE]: "おじゃま",
 });
 
 export const EVENT_TYPES = Object.freeze({

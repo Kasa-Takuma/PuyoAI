@@ -25,6 +25,10 @@ const PROBE_PAIRS = PLAYABLE_COLORS.flatMap((axis) =>
   PLAYABLE_COLORS.map((child) => ({ axis, child })),
 );
 
+function isFeatureColor(color) {
+  return color !== COLORS.EMPTY && color !== COLORS.GARBAGE;
+}
+
 export const FEATURE_KEYS = [
   "stackCells",
   "occupiedCells",
@@ -111,7 +115,7 @@ function collectGroups(board) {
   for (let y = 0; y < VISIBLE_HEIGHT; y += 1) {
     for (let x = 0; x < BOARD_WIDTH; x += 1) {
       const color = board[y][x];
-      if (color === COLORS.EMPTY || visited[y][x]) {
+      if (!isFeatureColor(color) || visited[y][x]) {
         continue;
       }
 

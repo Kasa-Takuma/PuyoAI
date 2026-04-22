@@ -80,6 +80,10 @@ function makeEvent(type, board, meta = {}) {
   };
 }
 
+function isClearableColor(color) {
+  return color !== COLORS.EMPTY && color !== COLORS.GARBAGE;
+}
+
 function collectGroups(board) {
   const visited = Array.from({ length: VISIBLE_HEIGHT }, () =>
     Array.from({ length: BOARD_WIDTH }, () => false),
@@ -89,7 +93,7 @@ function collectGroups(board) {
   for (let y = 0; y < VISIBLE_HEIGHT; y += 1) {
     for (let x = 0; x < BOARD_WIDTH; x += 1) {
       const color = board[y][x];
-      if (color === COLORS.EMPTY || visited[y][x]) {
+      if (!isClearableColor(color) || visited[y][x]) {
         continue;
       }
 
@@ -120,6 +124,28 @@ function collectGroups(board) {
   }
 
   return groups;
+}
+
+function clearAdjacentGarbage(board, erasedCells) {
+  const garbageCells = new Set();
+
+  for (const cell of erasedCells) {
+    for (const [dx, dy] of NEIGHBOR_OFFSETS) {
+      const nx = cell.x + dx;
+      const ny = cell.y + dy;
+      if (!isInsideBoard(nx, ny) || board[ny][nx] !== COLORS.GARBAGE) {
+        continue;
+      }
+      garbageCells.add(`${nx}:${ny}`);
+    }
+  }
+
+  for (const key of garbageCells) {
+    const [x, y] = key.split(":").map((value) => Number.parseInt(value, 10));
+    board[y][x] = COLORS.EMPTY;
+  }
+
+  return garbageCells.size;
 }
 
 function applyGravity(board) {
@@ -180,11 +206,14 @@ function resolveBoardState(workingBoard, events = null) {
     totalScore += stepScore;
     stepScores.push(stepScore);
 
+    const erasedCells = [];
     for (const group of matchedGroups) {
       for (const cell of group.cells) {
         workingBoard[cell.y][cell.x] = COLORS.EMPTY;
+        erasedCells.push(cell);
       }
     }
+    const garbageCleared = clearAdjacentGarbage(workingBoard, erasedCells);
 
     if (events) {
       events.push(
@@ -198,6 +227,7 @@ function resolveBoardState(workingBoard, events = null) {
             size: group.cells.length,
             cells: group.cells.map((cell) => ({ ...cell })),
           })),
+          garbageCleared,
         }),
       );
     }

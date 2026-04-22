@@ -193,3 +193,52 @@ test("fourteenth-row placements disappear instead of staying on the board", () =
   assert.equal(result.totalChains, 0);
   assert.deepEqual(boardToRows(result.finalBoard), boardToRows(board));
 });
+
+test("garbage puyos do not clear as a same-color group", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "OOOO..",
+  ]);
+
+  const result = resolveBoard(board);
+
+  assert.equal(result.totalChains, 0);
+  assert.deepEqual(boardToRows(result.finalBoard).slice(-1), ["OOOO.."]);
+});
+
+test("garbage adjacent to erased color puyos is cleared", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "RRR.O.",
+  ]);
+
+  const result = resolveTurn(
+    board,
+    { axis: COLORS.RED, child: COLORS.GREEN },
+    { column: 3, orientation: ORIENTATIONS.RIGHT },
+  );
+
+  assert.equal(result.totalChains, 1);
+  assert.deepEqual(boardToRows(result.finalBoard).slice(-1), ["....G."]);
+  assert.equal(result.events[1].garbageCleared, 1);
+});

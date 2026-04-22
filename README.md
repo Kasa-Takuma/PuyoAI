@@ -32,6 +32,12 @@ For the headless parallel runner, open:
 
 `http://localhost:4173/batch.html`
 
+For the ppsim2-based battle page using the PuyoAI v12 search profile, open:
+
+`http://localhost:4173/ppsim2/`
+
+The original viewer and batch runner remain separate from this page.
+
 ## Deploy To GitHub Pages
 
 This repo already includes a GitHub Pages workflow:
