@@ -13,9 +13,8 @@ const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
 const DEFAULT_PROFILE_ID = "chain_builder_v12";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 24;
-const MAX_SEARCH_DEPTH = 6;
+const MAX_SEARCH_DEPTH = 51;
 const MAX_INTERNAL_NEXT_PAIRS = MAX_SEARCH_DEPTH - 1;
-const DEPTH_OPTIONS = Object.freeze([1, 2, 3, 4, 5, 6]);
 const BEAM_WIDTH_OPTIONS = Object.freeze([12, 16, 24, 36, 48, 72, 96]);
 const SEARCH_SETTINGS = {
   depth: DEFAULT_DEPTH,
@@ -182,17 +181,13 @@ function updateSearchSettingsDescription() {
   description.textContent = `内部では現在手 + NEXT${visibleNext} まで見ます。${warning}`;
 }
 
-function renderSearchSettingSelects() {
-  const depthSelect = document.getElementById("ai-depth-select");
-  if (depthSelect) {
-    depthSelect.innerHTML = "";
-    for (const depth of DEPTH_OPTIONS) {
-      const option = document.createElement("option");
-      option.value = String(depth);
-      option.textContent = `Depth ${depth}`;
-      depthSelect.appendChild(option);
-    }
-    depthSelect.value = String(SEARCH_SETTINGS.depth);
+function renderSearchSettingInputs() {
+  const depthInput = document.getElementById("ai-depth-input");
+  if (depthInput) {
+    depthInput.min = "1";
+    depthInput.max = String(MAX_SEARCH_DEPTH);
+    depthInput.step = "1";
+    depthInput.value = String(SEARCH_SETTINGS.depth);
   }
 
   const beamSelect = document.getElementById("ai-beam-width-select");
@@ -213,9 +208,9 @@ function renderSearchSettingSelects() {
 function setSearchDepth(depth) {
   SEARCH_SETTINGS.depth = normalizeDepth(depth);
   storeNumber(DEPTH_STORAGE_KEY, SEARCH_SETTINGS.depth);
-  const select = document.getElementById("ai-depth-select");
-  if (select && select.value !== String(SEARCH_SETTINGS.depth)) {
-    select.value = String(SEARCH_SETTINGS.depth);
+  const input = document.getElementById("ai-depth-input");
+  if (input && input.value !== String(SEARCH_SETTINGS.depth)) {
+    input.value = String(SEARCH_SETTINGS.depth);
   }
   updateSearchSettingsDescription();
   aiStatus(`AI Depth ${SEARCH_SETTINGS.depth} に変更しました`);
@@ -605,7 +600,7 @@ function initializeAiControls() {
   SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
   SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
   renderProfileSelect();
-  renderSearchSettingSelects();
+  renderSearchSettingInputs();
   setAutoButton(false);
   setMoveLimitButton(false);
   setStepButtonDisabled(false);
