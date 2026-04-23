@@ -15,7 +15,7 @@ import {
 export { SEARCH_PROFILES, DEFAULT_SEARCH_PROFILE_ID };
 
 function clampDepth(depth) {
-  return Math.max(1, Math.min(4, Number.parseInt(depth, 10) || 1));
+  return Math.max(1, Math.min(6, Number.parseInt(depth, 10) || 1));
 }
 
 function clampBeamWidth(beamWidth) {

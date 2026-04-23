@@ -8,10 +8,18 @@ import {
 } from "./adapter.js";
 
 const PROFILE_STORAGE_KEY = "puyoai.ppsim2.searchProfile";
+const DEPTH_STORAGE_KEY = "puyoai.ppsim2.depth";
+const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
 const DEFAULT_PROFILE_ID = "chain_builder_v12";
+const DEFAULT_DEPTH = 3;
+const DEFAULT_BEAM_WIDTH = 24;
+const MAX_SEARCH_DEPTH = 6;
+const MAX_INTERNAL_NEXT_PAIRS = MAX_SEARCH_DEPTH - 1;
+const DEPTH_OPTIONS = Object.freeze([1, 2, 3, 4, 5, 6]);
+const BEAM_WIDTH_OPTIONS = Object.freeze([12, 16, 24, 36, 48, 72, 96]);
 const SEARCH_SETTINGS = {
-  depth: 3,
-  beamWidth: 24,
+  depth: DEFAULT_DEPTH,
+  beamWidth: DEFAULT_BEAM_WIDTH,
   searchProfile: DEFAULT_PROFILE_ID,
 };
 const AUTO_INTERVAL_MS = 160;
@@ -53,10 +61,35 @@ function storeProfileId(profileId) {
   }
 }
 
+function getStoredNumber(key) {
+  try {
+    const value = Number.parseInt(window.localStorage?.getItem(key) ?? "", 10);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeNumber(key, value) {
+  try {
+    window.localStorage?.setItem(key, String(value));
+  } catch {
+    // Storage can be unavailable in private browsing or file contexts.
+  }
+}
+
 function normalizeProfileId(profileId) {
   return PPSIM_PROFILE_OPTIONS.some((profile) => profile.id === profileId)
     ? profileId
     : DEFAULT_PROFILE_ID;
+}
+
+function normalizeDepth(depth) {
+  return Math.max(1, Math.min(MAX_SEARCH_DEPTH, Number.parseInt(depth, 10) || DEFAULT_DEPTH));
+}
+
+function normalizeBeamWidth(beamWidth) {
+  return Math.max(4, Math.min(96, Number.parseInt(beamWidth, 10) || DEFAULT_BEAM_WIDTH));
 }
 
 function getActiveProfile() {
@@ -136,6 +169,69 @@ function setSearchProfile(profileId) {
   aiStatus(`PuyoAI ${getActiveProfileLabel()} を選択しました`);
 }
 
+function updateSearchSettingsDescription() {
+  const description = document.getElementById("ai-search-settings-description");
+  if (!description) {
+    return;
+  }
+  const visibleNext = Math.max(0, SEARCH_SETTINGS.depth - 1);
+  const warning =
+    SEARCH_SETTINGS.depth >= 5 || SEARCH_SETTINGS.beamWidth >= 48
+      ? " 高めの設定なので、端末によっては思考が重くなります。"
+      : "";
+  description.textContent = `内部では現在手 + NEXT${visibleNext} まで見ます。${warning}`;
+}
+
+function renderSearchSettingSelects() {
+  const depthSelect = document.getElementById("ai-depth-select");
+  if (depthSelect) {
+    depthSelect.innerHTML = "";
+    for (const depth of DEPTH_OPTIONS) {
+      const option = document.createElement("option");
+      option.value = String(depth);
+      option.textContent = `Depth ${depth}`;
+      depthSelect.appendChild(option);
+    }
+    depthSelect.value = String(SEARCH_SETTINGS.depth);
+  }
+
+  const beamSelect = document.getElementById("ai-beam-width-select");
+  if (beamSelect) {
+    beamSelect.innerHTML = "";
+    for (const beamWidth of BEAM_WIDTH_OPTIONS) {
+      const option = document.createElement("option");
+      option.value = String(beamWidth);
+      option.textContent = String(beamWidth);
+      beamSelect.appendChild(option);
+    }
+    beamSelect.value = String(SEARCH_SETTINGS.beamWidth);
+  }
+
+  updateSearchSettingsDescription();
+}
+
+function setSearchDepth(depth) {
+  SEARCH_SETTINGS.depth = normalizeDepth(depth);
+  storeNumber(DEPTH_STORAGE_KEY, SEARCH_SETTINGS.depth);
+  const select = document.getElementById("ai-depth-select");
+  if (select && select.value !== String(SEARCH_SETTINGS.depth)) {
+    select.value = String(SEARCH_SETTINGS.depth);
+  }
+  updateSearchSettingsDescription();
+  aiStatus(`AI Depth ${SEARCH_SETTINGS.depth} に変更しました`);
+}
+
+function setBeamWidth(beamWidth) {
+  SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(beamWidth);
+  storeNumber(BEAM_WIDTH_STORAGE_KEY, SEARCH_SETTINGS.beamWidth);
+  const select = document.getElementById("ai-beam-width-select");
+  if (select && select.value !== String(SEARCH_SETTINGS.beamWidth)) {
+    select.value = String(SEARCH_SETTINGS.beamWidth);
+  }
+  updateSearchSettingsDescription();
+  aiStatus(`AI Beam Width ${SEARCH_SETTINGS.beamWidth} に変更しました`);
+}
+
 function getGameState() {
   return typeof window.getGameState === "function" ? window.getGameState() : null;
 }
@@ -150,8 +246,14 @@ function buildSearchPayload() {
   const ppsimBoard =
     typeof window.getBoardSnapshot === "function" ? window.getBoardSnapshot() : null;
   const currentPair = convertCurrentPair(getCurrentPuyo());
+  const requiredNextPairs = Math.min(
+    MAX_INTERNAL_NEXT_PAIRS,
+    Math.max(0, SEARCH_SETTINGS.depth - 1),
+  );
   const nextQueue = convertNextQueue(
-    typeof window.getUpcomingPairs === "function" ? window.getUpcomingPairs(5) : [],
+    typeof window.getUpcomingPairs === "function"
+      ? window.getUpcomingPairs(requiredNextPairs)
+      : [],
   );
 
   if (!ppsimBoard || !currentPair) {
@@ -474,6 +576,14 @@ window.setPuyoAIProfile = function setPuyoAIProfile(profileId) {
   setSearchProfile(profileId);
 };
 
+window.setPuyoAISearchDepth = function setPuyoAISearchDepth(depth) {
+  setSearchDepth(depth);
+};
+
+window.setPuyoAIBeamWidth = function setPuyoAIBeamWidth(beamWidth) {
+  setBeamWidth(beamWidth);
+};
+
 window.toggleAIAuto = function toggleAIAuto() {
   autoEnabled = !autoEnabled;
   setAutoButton(autoEnabled);
@@ -492,7 +602,10 @@ window.toggleAIAuto = function toggleAIAuto() {
 
 function initializeAiControls() {
   SEARCH_SETTINGS.searchProfile = normalizeProfileId(getStoredProfileId());
+  SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
+  SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
   renderProfileSelect();
+  renderSearchSettingSelects();
   setAutoButton(false);
   setMoveLimitButton(false);
   setStepButtonDisabled(false);
