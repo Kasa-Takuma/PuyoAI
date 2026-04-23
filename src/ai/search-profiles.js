@@ -64,6 +64,11 @@ export const SEARCH_PROFILES = Object.freeze([
     label: "Chain Builder v12",
     description: "Promotes evolution champion g008_c007: stronger 10+/11+/12+ pressure with broader mature-chain bias.",
   },
+  {
+    id: "chain_builder_v12_ac",
+    label: "Chain Builder v12AC",
+    description: "v12 with a strong all-clear bonus so reachable all-clear routes are preferred.",
+  },
 ]);
 
 export const DEFAULT_SEARCH_PROFILE_ID = SEARCH_PROFILES[0].id;

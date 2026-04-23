@@ -264,6 +264,23 @@ const TURN_RESULT_PROFILE_WEIGHTS = Object.freeze({
     elevenPlusBonus: 202_440,
     twelvePlusBonus: 512_657,
   }),
+  chain_builder_v12_ac: Object.freeze({
+    ...CHAIN_BUILDER_V3_TURN_WEIGHTS,
+    chainValueBase: 738,
+    chainExponent: 3.25039,
+    scoreScale: 0.89989,
+    singleChainPenalty: -23_000,
+    singleScoreScale: 0.03,
+    smallChainPenaltyStep: -42_148,
+    midChainPenalty: -150_194,
+    sevenChainPenalty: -49_504,
+    eightChainPenalty: -70_464,
+    nineChainPenalty: -53_129,
+    tenPlusBonus: 105_948,
+    elevenPlusBonus: 202_440,
+    twelvePlusBonus: 512_657,
+    allClearBonus: 450_000,
+  }),
 });
 
 export function getTurnResultProfileWeights(profileId = DEFAULT_SEARCH_PROFILE_ID) {
@@ -340,18 +357,23 @@ function scoreTurnResult(
     return weights.topoutPenalty;
   }
 
+  const allClearBonus = result.allClear ? weights.allClearBonus ?? 0 : 0;
+
   if (result.totalChains === 0) {
-    return 0;
+    return allClearBonus;
   }
 
   if (result.totalChains === 1) {
-    return weights.singleChainPenalty + result.totalScore * weights.singleScoreScale;
+    return (
+      weights.singleChainPenalty +
+      result.totalScore * weights.singleScoreScale +
+      allClearBonus
+    );
   }
 
   const chainValue =
     weights.chainValueBase * result.totalChains ** weights.chainExponent;
   const scoreValue = result.totalScore * weights.scoreScale;
-  const allClearBonus = result.allClear ? weights.allClearBonus : 0;
   const smallChainPenalty =
     result.totalChains >= 2 && result.totalChains <= 6
       ? (weights.smallChainPenaltyStep ?? 0) * (7 - result.totalChains)

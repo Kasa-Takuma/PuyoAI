@@ -1,4 +1,4 @@
-import { searchBestMove } from "../ai/search.js";
+import { SEARCH_PROFILES, searchBestMove } from "../ai/search.js";
 import {
   convertActionToPpsimPlacement,
   convertBoard,
@@ -7,11 +7,13 @@ import {
   summarizeAction,
 } from "./adapter.js";
 
-const SEARCH_SETTINGS = Object.freeze({
+const PROFILE_STORAGE_KEY = "puyoai.ppsim2.searchProfile";
+const DEFAULT_PROFILE_ID = "chain_builder_v12";
+const SEARCH_SETTINGS = {
   depth: 3,
   beamWidth: 24,
-  searchProfile: "chain_builder_v12",
-});
+  searchProfile: DEFAULT_PROFILE_ID,
+};
 const AUTO_INTERVAL_MS = 160;
 const LIMITED_HORIZONTAL_MOVE_DELAY_MS = 90;
 
@@ -28,6 +30,47 @@ class MovementError extends Error {
   }
 }
 
+function isPpsimSelectableProfile(profile) {
+  const match = /^chain_builder_v(\d+)(?:_|$)/.exec(profile.id);
+  return match ? Number.parseInt(match[1], 10) >= 12 : false;
+}
+
+const PPSIM_PROFILE_OPTIONS = SEARCH_PROFILES.filter(isPpsimSelectableProfile);
+
+function getStoredProfileId() {
+  try {
+    return window.localStorage?.getItem(PROFILE_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function storeProfileId(profileId) {
+  try {
+    window.localStorage?.setItem(PROFILE_STORAGE_KEY, profileId);
+  } catch {
+    // Storage can be unavailable in private browsing or file contexts.
+  }
+}
+
+function normalizeProfileId(profileId) {
+  return PPSIM_PROFILE_OPTIONS.some((profile) => profile.id === profileId)
+    ? profileId
+    : DEFAULT_PROFILE_ID;
+}
+
+function getActiveProfile() {
+  return (
+    PPSIM_PROFILE_OPTIONS.find((profile) => profile.id === SEARCH_SETTINGS.searchProfile) ??
+    PPSIM_PROFILE_OPTIONS.find((profile) => profile.id === DEFAULT_PROFILE_ID) ??
+    PPSIM_PROFILE_OPTIONS[0]
+  );
+}
+
+function getActiveProfileLabel() {
+  return getActiveProfile()?.label?.replace("Chain Builder ", "") ?? "v12";
+}
+
 function aiStatus(text) {
   const element = document.getElementById("ai-status");
   if (element) {
@@ -38,7 +81,8 @@ function aiStatus(text) {
 function setAutoButton(on) {
   const button = document.getElementById("ai-auto-button");
   if (button) {
-    button.textContent = on ? "AI自動: ON (v12)" : "AI自動: OFF (v12)";
+    const label = getActiveProfileLabel();
+    button.textContent = on ? `AI自動: ON (${label})` : `AI自動: OFF (${label})`;
   }
 }
 
@@ -54,6 +98,42 @@ function setMoveLimitButton(on) {
   if (button) {
     button.textContent = on ? "横移動制限: ON" : "横移動制限: OFF";
   }
+}
+
+function updateProfileDescription() {
+  const description = document.getElementById("ai-profile-description");
+  if (description) {
+    description.textContent = getActiveProfile()?.description ?? "";
+  }
+}
+
+function renderProfileSelect() {
+  const select = document.getElementById("ai-profile-select");
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = "";
+  for (const profile of PPSIM_PROFILE_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = profile.label.replace("Chain Builder ", "");
+    select.appendChild(option);
+  }
+  select.value = SEARCH_SETTINGS.searchProfile;
+  updateProfileDescription();
+}
+
+function setSearchProfile(profileId) {
+  SEARCH_SETTINGS.searchProfile = normalizeProfileId(profileId);
+  storeProfileId(SEARCH_SETTINGS.searchProfile);
+  const select = document.getElementById("ai-profile-select");
+  if (select && select.value !== SEARCH_SETTINGS.searchProfile) {
+    select.value = SEARCH_SETTINGS.searchProfile;
+  }
+  updateProfileDescription();
+  setAutoButton(autoEnabled);
+  aiStatus(`PuyoAI ${getActiveProfileLabel()} を選択しました`);
 }
 
 function getGameState() {
@@ -82,7 +162,7 @@ function buildSearchPayload() {
     board: convertBoard(ppsimBoard),
     currentPair,
     nextQueue,
-    settings: SEARCH_SETTINGS,
+    settings: { ...SEARCH_SETTINGS },
   };
 }
 
@@ -160,7 +240,7 @@ async function applyAction(action) {
   const placement = convertActionToPpsimPlacement(action);
   if (!placement) {
     throw new Error(
-      `PuyoAI v12 returned an unusable placement: ${summarizeAction(action)}`,
+      `PuyoAI ${getActiveProfileLabel()} returned an unusable placement: ${summarizeAction(action)}`,
     );
   }
 
@@ -175,14 +255,14 @@ async function applyReachableCandidate(analysis) {
 
   const candidates = getOrderedCandidates(analysis);
   if (candidates.length === 0) {
-    throw new Error("PuyoAI v12 did not return any usable candidates.");
+    throw new Error(`PuyoAI ${getActiveProfileLabel()} did not return any usable candidates.`);
   }
 
   const failures = [];
   for (const entry of candidates) {
     try {
       if (failures.length > 0) {
-        aiStatus(`PuyoAI v12 再探索中... ${summarizeAction(entry.action)}`);
+        aiStatus(`PuyoAI ${getActiveProfileLabel()} 再探索中... ${summarizeAction(entry.action)}`);
       }
       await applyAction(entry.action);
       return {
@@ -198,7 +278,7 @@ async function applyReachableCandidate(analysis) {
         throw error;
       }
       console.warn(
-        "[PuyoAI v12] candidate blocked, trying fallback",
+        `[PuyoAI ${getActiveProfileLabel()}] candidate blocked, trying fallback`,
         summarizeAction(entry.action),
         error,
       );
@@ -286,7 +366,11 @@ async function runPuyoAIInternal() {
 
   const gameState = getGameState();
   if (gameState !== "playing") {
-    aiStatus(gameState === "gameover" ? "ゲームオーバー" : "PuyoAI v12 待機中");
+    aiStatus(
+      gameState === "gameover"
+        ? "ゲームオーバー"
+        : `PuyoAI ${getActiveProfileLabel()} 待機中`,
+    );
     return false;
   }
   if (!getCurrentPuyo()) {
@@ -296,13 +380,13 @@ async function runPuyoAIInternal() {
 
   const payload = buildSearchPayload();
   if (!payload) {
-    aiStatus("PuyoAI v12 入力待ち");
+    aiStatus(`PuyoAI ${getActiveProfileLabel()} 入力待ち`);
     return false;
   }
 
   aiBusy = true;
   setStepButtonDisabled(true);
-  aiStatus("PuyoAI v12 思考中...");
+  aiStatus(`PuyoAI ${getActiveProfileLabel()} 思考中...`);
 
   try {
     const analysis = searchBestMove(payload);
@@ -311,15 +395,15 @@ async function runPuyoAIInternal() {
     const fallbackText =
       applied.fallbackCount > 0 ? ` / 再探索${applied.fallbackCount}回` : "";
     aiStatus(
-      `PuyoAI v12 / ${summarizeAction(applied.action)} / ${chains}連${fallbackText} / ${Math.round(
+      `PuyoAI ${getActiveProfileLabel()} / ${summarizeAction(applied.action)} / ${chains}連${fallbackText} / ${Math.round(
         analysis.elapsedMs,
       )}ms`,
     );
     return true;
   } catch (error) {
-    console.error("[PuyoAI v12] failed to run", error);
+    console.error(`[PuyoAI ${getActiveProfileLabel()}] failed to run`, error);
     aiStatus(
-      `PuyoAI v12 エラー: ${
+      `PuyoAI ${getActiveProfileLabel()} エラー: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -359,7 +443,7 @@ function scheduleAutoTick() {
     if (!aiBusy && gameState === "playing" && getCurrentPuyo()) {
       await runPuyoAIInternal();
     } else if (gameState !== "playing") {
-      aiStatus("PuyoAI v12 待機中");
+      aiStatus(`PuyoAI ${getActiveProfileLabel()} 待機中`);
     }
 
     scheduleAutoTick();
@@ -369,6 +453,7 @@ function scheduleAutoTick() {
 window.PuyoAI = {
   runOnce: runPuyoAIInternal,
   settings: SEARCH_SETTINGS,
+  profiles: PPSIM_PROFILE_OPTIONS,
 };
 
 window.runPuyoAI = function runPuyoAI() {
@@ -385,27 +470,33 @@ window.toggleAIMoveLimit = function toggleAIMoveLimit() {
   );
 };
 
+window.setPuyoAIProfile = function setPuyoAIProfile(profileId) {
+  setSearchProfile(profileId);
+};
+
 window.toggleAIAuto = function toggleAIAuto() {
   autoEnabled = !autoEnabled;
   setAutoButton(autoEnabled);
 
   if (autoEnabled) {
-    aiStatus("PuyoAI v12 自動実行中");
+    aiStatus(`PuyoAI ${getActiveProfileLabel()} 自動実行中`);
     scheduleAutoTick();
   } else {
     if (autoTimer !== null) {
       window.clearTimeout(autoTimer);
       autoTimer = null;
     }
-    aiStatus("PuyoAI v12 待機中");
+    aiStatus(`PuyoAI ${getActiveProfileLabel()} 待機中`);
   }
 };
 
 function initializeAiControls() {
+  SEARCH_SETTINGS.searchProfile = normalizeProfileId(getStoredProfileId());
+  renderProfileSelect();
   setAutoButton(false);
   setMoveLimitButton(false);
   setStepButtonDisabled(false);
-  aiStatus("PuyoAI v12 待機中");
+  aiStatus(`PuyoAI ${getActiveProfileLabel()} 待機中`);
 }
 
 if (document.readyState === "loading") {
