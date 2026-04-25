@@ -5,6 +5,8 @@
   "scripts": {
     "tune:v9b": "node tools/tune-search-profile.js",
     "evolve:v11": "node tools/evolve-search-profile.js",
+    "generate:rl": "node tools/generate-rl-rollouts.js",
+    "train:policy:rl": "python3 -m training.train_policy_rl",
     "generate:value": "node tools/generate-value-stream.js",
     "train:value:stream": "python3 -m training.train_value_stream",
     "export:value": "python3 -m training.export_web_value --checkpoint models/value_mlp.pt --output models/value_mlp.web.json --name value_mlp"

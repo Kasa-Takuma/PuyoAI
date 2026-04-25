@@ -595,6 +595,24 @@ const BOARD_PROFILE_WEIGHTS = Object.freeze({
     valleyPenalty: -41,
     isolatedSingles: -39,
   }),
+  chain_builder_v13: Object.freeze({
+    ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
+    bestVirtualChain: 1051,
+    topVirtualChainSum: 376,
+    virtualChainCount2Plus: 58,
+    virtualChainCount3Plus: 215,
+    bestVirtualScore: 0.48661,
+    topVirtualScoreSum: 0.13754,
+    surfaceReadyGroup3Count: 209,
+    surfaceExtendableGroup2Count: 64,
+    group3Count: 62,
+    group2Count: 18,
+    dangerCells: -241,
+    surfaceRoughness: -15,
+    steepWalls: -67,
+    valleyPenalty: -41,
+    isolatedSingles: -39,
+  }),
   chain_builder_v12_ac: Object.freeze({
     ...CHAIN_BUILDER_V3_BOARD_WEIGHTS,
     bestVirtualChain: 942,
@@ -656,6 +674,7 @@ export function scoreBoardFeatures(
     effectiveProfileId === "chain_builder_v10" ||
     effectiveProfileId === "chain_builder_v11" ||
     effectiveProfileId === "chain_builder_v12" ||
+    effectiveProfileId === "chain_builder_v13" ||
     effectiveProfileId === "chain_builder_v12_ac"
       ? bonusScale(profileConfig, "largeChain") *
         (Math.max(0, features.bestVirtualChain - 5) ** 3 * 460 +
@@ -837,6 +856,7 @@ export function scoreBoardFeatures(
     effectiveProfileId === "chain_builder_v9b" ||
     effectiveProfileId === "chain_builder_v11" ||
     effectiveProfileId === "chain_builder_v12" ||
+    effectiveProfileId === "chain_builder_v13" ||
     effectiveProfileId === "chain_builder_v12_ac"
       ? bonusScale(profileConfig, "v9b") *
         (Math.max(0, features.bestVirtualChain - 8) ** 3 * 1450 +

@@ -32,7 +32,7 @@ For the headless parallel runner, open:
 
 `http://localhost:4173/batch.html`
 
-For the ppsim2-based battle page using the PuyoAI v12 search profile, open:
+For the ppsim2-based battle page using the PuyoAI v13 search profile, open:
 
 `http://localhost:4173/ppsim2/`
 
@@ -105,6 +105,8 @@ For a more reliable sweep, raise `--turns`, `--candidates`, and usually use
 v9b tuning run.
 `chain_builder_v12` is the promoted generation-8 evolution champion
 `evolve_chain_builder_v11_g008_c007_e08280`.
+`chain_builder_v13` is the promoted generation-15 evolution champion
+`evolve_chain_builder_v12_g015_c019_77a379`.
 
 To re-benchmark promising candidates from the same tuning seed, use `--only`.
 For example, this reruns only `tuned_v9b_003` and `tuned_v9b_008` plus the v9b
@@ -142,6 +144,21 @@ neighborhood when the champion has not changed.
 The runner writes `log/puyoai-evolution-report-*.json` as it goes. Only promote
 a result into `search-profiles.js` after a longer benchmark confirms it beats
 v11 on separate seeds.
+
+Evolution reports include detailed per-candidate diagnostics in addition to the
+selection score:
+
+- objective-score contribution breakdown
+- all chain buckets from 1-chain through 13+
+- zero-chain turns, all-clear count, topout rate, and chain-event rate
+- per-game score/turn/best-chain summaries so seed variance is visible
+- first 10+ chain timing when it occurs
+- average searched leaf features, such as virtual chain potential, danger cells,
+  roughness, and hidden cells
+- per-game records for the fair seed set used in each stage
+
+Use these fields to reject candidates that only win by one lucky seed or by
+unsafe high variance, even if their headline objective score is high.
 
 To continue from the latest completed generation in a previous report, pass
 `--resume-report`. The original report is left untouched; a new report is
@@ -324,6 +341,63 @@ Then open the normal viewer, keep `AI Mode` as `Search`, set `Value Assist` to
 `On`, and compare against the same search profile with `Value Assist` off. The
 default `Value Weight` is intentionally conservative; raise it only after a
 benchmark shows the value-assisted search is better.
+
+## Policy-Gradient RL
+
+When the search profile is no longer improving, use v12 as the benchmark and
+bootstrap, then let the learned policy collect stochastic self-play rollouts.
+This avoids using search logs as a fixed teacher; the update is driven by the
+policy's own discounted episode reward.
+
+Export a checkpoint to the web-policy format used by the rollout generator:
+
+```bash
+python3 -m training.export_web_policy \
+  --checkpoint models/policy_mlp.pt \
+  --output models/policy_rl_seed.web.json \
+  --name policy_rl_seed
+```
+
+Generate on-policy rollout episodes:
+
+```bash
+npm run generate:rl -- \
+  --policy-model models/policy_rl_seed.web.json \
+  --turns 50000 \
+  --games 100 \
+  --temperature 1.12 \
+  --epsilon 0.04 \
+  --top-k 8 \
+  > log/policy-rl-rollouts.jsonl
+```
+
+Fine-tune from those rollouts:
+
+```bash
+npm run train:policy:rl -- \
+  --init models/policy_mlp.pt \
+  --rollouts log/policy-rl-rollouts.jsonl \
+  --output models/policy_rl.pt \
+  --epochs 4 \
+  --lr 3e-5 \
+  --entropy-weight 0.01 \
+  --kl-anchor-weight 0.02
+```
+
+Export the result, run it in the viewer or batch runner, and only keep iterating
+if it improves on held-out seeds:
+
+```bash
+python3 -m training.export_web_policy \
+  --checkpoint models/policy_rl.pt \
+  --output models/policy_rl.web.json \
+  --name policy_rl
+```
+
+For the next RL iteration, generate rollouts from `models/policy_rl.web.json`
+and initialize training from `models/policy_rl.pt`. Keep `--kl-anchor-weight`
+small or set it to `0` once the policy is stable; it is a collapse guard, not a
+teacher signal.
 
 ## Test
 

@@ -10,7 +10,7 @@ import {
 const PROFILE_STORAGE_KEY = "puyoai.ppsim2.searchProfile";
 const DEPTH_STORAGE_KEY = "puyoai.ppsim2.depth";
 const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
-const DEFAULT_PROFILE_ID = "chain_builder_v12";
+const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 24;
 const MAX_SEARCH_DEPTH = 51;
@@ -100,7 +100,7 @@ function getActiveProfile() {
 }
 
 function getActiveProfileLabel() {
-  return getActiveProfile()?.label?.replace("Chain Builder ", "") ?? "v12";
+  return getActiveProfile()?.label?.replace("Chain Builder ", "") ?? "v13";
 }
 
 function aiStatus(text) {

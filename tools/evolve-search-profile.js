@@ -38,6 +38,30 @@ const TUNABLES = Object.freeze([
   { group: "bonusScales", key: "v9b", base: 1, spread: 0.14 },
 ]);
 
+const EVALUATION_FEATURE_KEYS = Object.freeze([
+  "stackCells",
+  "maxHeight",
+  "hiddenCells",
+  "dangerCells",
+  "surfaceRoughness",
+  "steepWalls",
+  "valleyPenalty",
+  "adjacency",
+  "group2Count",
+  "group3Count",
+  "surfaceExtendableGroup2Count",
+  "surfaceReadyGroup3Count",
+  "isolatedSingles",
+  "colorBalance",
+  "columnsUsed",
+  "bestVirtualChain",
+  "bestVirtualScore",
+  "virtualChainCount2Plus",
+  "virtualChainCount3Plus",
+  "topVirtualChainSum",
+  "topVirtualScoreSum",
+]);
+
 function parseArgs(argv) {
   const args = {
     baseProfile: DEFAULT_BASE_PROFILE_ID,
@@ -444,79 +468,308 @@ function countAtLeast(histogram, threshold) {
   }, 0);
 }
 
+function countBetween(histogram, min, max) {
+  return Object.entries(histogram).reduce((sum, [chains, count]) => {
+    const chainCount = Number(chains);
+    return chainCount >= min && chainCount <= max ? sum + count : sum;
+  }, 0);
+}
+
+function mean(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function median(values) {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
+}
+
+function standardDeviation(values) {
+  if (values.length <= 1) {
+    return 0;
+  }
+  const average = mean(values);
+  const variance =
+    values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
+    values.length;
+  return Math.sqrt(variance);
+}
+
+function ratio(numerator, denominator) {
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+function scoreBreakdown(summary) {
+  return {
+    tenPlus: summary.tenPlusPer10k * 10,
+    elevenPlus: summary.elevenPlusPer10k * 48,
+    twelvePlus: summary.twelvePlusPer10k * 120,
+    thirteenPlus: summary.thirteenPlusPer10k * 260,
+    scorePerTurn: summary.scorePerTurn * 0.04,
+    below7Penalty: -summary.below7Per10k * 0.22,
+    sevenToNinePenalty: -summary.sevenToNinePer10k * 0.23,
+    topoutPenalty: -summary.topouts * 900,
+    speedPenalty: -summary.wallMsPerTurn * 0.08,
+  };
+}
+
 function scoreSummary(summary) {
-  return (
-    summary.tenPlusPer10k * 10 +
-    summary.elevenPlusPer10k * 48 +
-    summary.twelvePlusPer10k * 120 +
-    summary.thirteenPlusPer10k * 260 +
-    summary.scorePerTurn * 0.04 -
-    summary.below7Per10k * 0.22 -
-    summary.sevenToNinePer10k * 0.23 -
-    summary.topouts * 900 -
-    summary.wallMsPerTurn * 0.08
+  const breakdown = scoreBreakdown(summary);
+  return Object.values(breakdown).reduce((sum, value) => sum + value, 0);
+}
+
+function createEmptyStats() {
+  return {
+    totalTurns: 0,
+    totalScore: 0,
+    topouts: 0,
+    allClears: 0,
+    bestChain: 0,
+    chainEventsTotal: 0,
+    chainHistogram: {},
+    wallMs: 0,
+    searchMs: 0,
+    leafFeatureSums: Object.fromEntries(
+      EVALUATION_FEATURE_KEYS.map((key) => [key, 0]),
+    ),
+    leafFeatureCount: 0,
+    leafPotential: {
+      chain7Plus: 0,
+      chain10Plus: 0,
+      chain11Plus: 0,
+      chain12Plus: 0,
+      dangerous: 0,
+      hidden: 0,
+    },
+    games: [],
+  };
+}
+
+function createEmptyGameStats(seed) {
+  return {
+    seed,
+    turns: 0,
+    score: 0,
+    topout: false,
+    allClears: 0,
+    bestChain: 0,
+    chainEvents: 0,
+    chainHistogram: {},
+    first7PlusTurn: null,
+    first10PlusTurn: null,
+    first11PlusTurn: null,
+    first12PlusTurn: null,
+  };
+}
+
+function recordChainResult(stats, gameStats, result) {
+  stats.totalTurns += 1;
+  stats.totalScore += result.totalScore;
+  stats.bestChain = Math.max(stats.bestChain, result.totalChains);
+  gameStats.turns += 1;
+  gameStats.score += result.totalScore;
+  gameStats.bestChain = Math.max(gameStats.bestChain, result.totalChains);
+
+  if (result.allClear) {
+    stats.allClears += 1;
+    gameStats.allClears += 1;
+  }
+
+  if (result.totalChains > 0) {
+    stats.chainEventsTotal += 1;
+    gameStats.chainEvents += 1;
+    const key = String(result.totalChains);
+    stats.chainHistogram[key] = (stats.chainHistogram[key] ?? 0) + 1;
+    gameStats.chainHistogram[key] = (gameStats.chainHistogram[key] ?? 0) + 1;
+  }
+
+  if (result.totalChains >= 7 && gameStats.first7PlusTurn === null) {
+    gameStats.first7PlusTurn = gameStats.turns;
+  }
+  if (result.totalChains >= 10 && gameStats.first10PlusTurn === null) {
+    gameStats.first10PlusTurn = gameStats.turns;
+  }
+  if (result.totalChains >= 11 && gameStats.first11PlusTurn === null) {
+    gameStats.first11PlusTurn = gameStats.turns;
+  }
+  if (result.totalChains >= 12 && gameStats.first12PlusTurn === null) {
+    gameStats.first12PlusTurn = gameStats.turns;
+  }
+
+  if (result.topout) {
+    stats.topouts += 1;
+    gameStats.topout = true;
+  }
+}
+
+function recordLeafFeatures(stats, analysis) {
+  const features = analysis.candidates?.[0]?.leafFeatures;
+  if (!features) {
+    return;
+  }
+
+  stats.leafFeatureCount += 1;
+  for (const key of EVALUATION_FEATURE_KEYS) {
+    stats.leafFeatureSums[key] += features[key] ?? 0;
+  }
+  if ((features.bestVirtualChain ?? 0) >= 7) {
+    stats.leafPotential.chain7Plus += 1;
+  }
+  if ((features.bestVirtualChain ?? 0) >= 10) {
+    stats.leafPotential.chain10Plus += 1;
+  }
+  if ((features.bestVirtualChain ?? 0) >= 11) {
+    stats.leafPotential.chain11Plus += 1;
+  }
+  if ((features.bestVirtualChain ?? 0) >= 12) {
+    stats.leafPotential.chain12Plus += 1;
+  }
+  if ((features.dangerCells ?? 0) > 0) {
+    stats.leafPotential.dangerous += 1;
+  }
+  if ((features.hiddenCells ?? 0) > 0) {
+    stats.leafPotential.hidden += 1;
+  }
+}
+
+function summarizeGameStats(gameStats) {
+  return {
+    ...gameStats,
+    chains7Plus: countAtLeast(gameStats.chainHistogram, 7),
+    chains10Plus: countAtLeast(gameStats.chainHistogram, 10),
+    chains11Plus: countAtLeast(gameStats.chainHistogram, 11),
+    chains12Plus: countAtLeast(gameStats.chainHistogram, 12),
+    chains13Plus: countAtLeast(gameStats.chainHistogram, 13),
+  };
+}
+
+function averageLeafFeatures(stats) {
+  if (stats.leafFeatureCount === 0) {
+    return Object.fromEntries(EVALUATION_FEATURE_KEYS.map((key) => [key, 0]));
+  }
+  return Object.fromEntries(
+    EVALUATION_FEATURE_KEYS.map((key) => [
+      key,
+      stats.leafFeatureSums[key] / stats.leafFeatureCount,
+    ]),
   );
 }
 
 function summarizeRun(candidate, stats) {
+  const games = stats.games.map(summarizeGameStats);
+  const gameScores = games.map((game) => game.score);
+  const gameTurns = games.map((game) => game.turns);
+  const gameBestChains = games.map((game) => game.bestChain);
+  const first10PlusTurns = games
+    .map((game) => game.first10PlusTurn)
+    .filter((turn) => turn !== null);
   const chains7Plus = countAtLeast(stats.chainHistogram, 7);
   const chains10Plus = countAtLeast(stats.chainHistogram, 10);
   const chains11Plus = countAtLeast(stats.chainHistogram, 11);
   const chains12Plus = countAtLeast(stats.chainHistogram, 12);
   const chains13Plus = countAtLeast(stats.chainHistogram, 13);
+  const chains1 = countBetween(stats.chainHistogram, 1, 1);
+  const chains2To3 = countBetween(stats.chainHistogram, 2, 3);
+  const chains4To6 = countBetween(stats.chainHistogram, 4, 6);
   const chains7To9 = chains7Plus - chains10Plus;
   const chainsBelow7 = Math.max(0, stats.chainEventsTotal - chains7Plus);
+  const zeroChainTurns = Math.max(0, stats.totalTurns - stats.chainEventsTotal);
   const per10k = (value) =>
     stats.totalTurns > 0 ? (value / stats.totalTurns) * 10_000 : 0;
   const summary = {
+    metricsVersion: 2,
     id: candidate.id,
     baseProfileId: candidate.baseProfileId,
     parentId: candidate.parentId,
     source: candidate.source,
+    gameCount: games.length,
     totalTurns: stats.totalTurns,
     topouts: stats.topouts,
+    topoutsPer10k: per10k(stats.topouts),
+    topoutGameRate: ratio(stats.topouts, games.length),
+    allClears: stats.allClears,
+    allClearsPer10k: per10k(stats.allClears),
     totalScore: stats.totalScore,
     scorePerTurn:
       stats.totalTurns > 0 ? stats.totalScore / stats.totalTurns : 0,
+    scorePerGameMean: mean(gameScores),
+    scorePerGameMedian: median(gameScores),
+    scorePerGameStdDev: standardDeviation(gameScores),
+    turnsPerGameMean: mean(gameTurns),
+    turnsPerGameMedian: median(gameTurns),
     bestChain: stats.bestChain,
+    bestChainPerGameMean: mean(gameBestChains),
     chainEventsTotal: stats.chainEventsTotal,
+    chainEventRate: ratio(stats.chainEventsTotal, stats.totalTurns),
+    zeroChainTurns,
+    chains1,
+    chains2To3,
+    chains4To6,
     chainsBelow7,
     chains7Plus,
     chains10Plus,
     chains11Plus,
     chains12Plus,
     chains13Plus,
+    zeroChainPer10k: per10k(zeroChainTurns),
+    oneChainPer10k: per10k(chains1),
+    twoToThreePer10k: per10k(chains2To3),
+    fourToSixPer10k: per10k(chains4To6),
     below7Per10k: per10k(chainsBelow7),
     sevenToNinePer10k: per10k(chains7To9),
     tenPlusPer10k: per10k(chains10Plus),
     elevenPlusPer10k: per10k(chains11Plus),
     twelvePlusPer10k: per10k(chains12Plus),
     thirteenPlusPer10k: per10k(chains13Plus),
+    tenPlusGameRate: ratio(
+      games.filter((game) => game.chains10Plus > 0).length,
+      games.length,
+    ),
+    elevenPlusGameRate: ratio(
+      games.filter((game) => game.chains11Plus > 0).length,
+      games.length,
+    ),
+    twelvePlusGameRate: ratio(
+      games.filter((game) => game.chains12Plus > 0).length,
+      games.length,
+    ),
+    first10PlusTurnMean: mean(first10PlusTurns),
     elevenShareOf10Plus:
       chains10Plus > 0 ? chains11Plus / chains10Plus : 0,
     wallMsPerTurn:
       stats.totalTurns > 0 ? stats.wallMs / stats.totalTurns : 0,
     searchMsPerTurn:
       stats.totalTurns > 0 ? stats.searchMs / stats.totalTurns : 0,
+    leafFeatureAverages: averageLeafFeatures(stats),
+    leafPotentialRates: {
+      chain7Plus: ratio(stats.leafPotential.chain7Plus, stats.leafFeatureCount),
+      chain10Plus: ratio(stats.leafPotential.chain10Plus, stats.leafFeatureCount),
+      chain11Plus: ratio(stats.leafPotential.chain11Plus, stats.leafFeatureCount),
+      chain12Plus: ratio(stats.leafPotential.chain12Plus, stats.leafFeatureCount),
+      dangerous: ratio(stats.leafPotential.dangerous, stats.leafFeatureCount),
+      hidden: ratio(stats.leafPotential.hidden, stats.leafFeatureCount),
+    },
+    games,
     chainHistogram: stats.chainHistogram,
   };
   return {
     ...summary,
     objectiveScore: scoreSummary(summary),
+    objectiveBreakdown: scoreBreakdown(summary),
   };
 }
 
 function runCandidate(candidate, job) {
-  const stats = {
-    totalTurns: 0,
-    totalScore: 0,
-    topouts: 0,
-    bestChain: 0,
-    chainEventsTotal: 0,
-    chainHistogram: {},
-    wallMs: 0,
-    searchMs: 0,
-  };
+  const stats = createEmptyStats();
   const startedAt = performance.now();
   const turnsPerGame = Math.ceil(job.turns / job.seeds.length);
   const aiSettings = {
@@ -531,11 +784,13 @@ function runCandidate(candidate, job) {
     game < job.seeds.length && stats.totalTurns < job.turns;
     game += 1
   ) {
+    const seed = job.seeds[game];
     const state = createGameState({
       presetId: "sandbox",
-      seed: job.seeds[game],
+      seed,
       aiSettings,
     });
+    const gameStats = createEmptyGameStats(seed);
     let gameTurns = 0;
 
     while (
@@ -555,21 +810,11 @@ function runCandidate(candidate, job) {
       }
 
       gameTurns += 1;
-      stats.totalTurns += 1;
-      stats.totalScore += result.totalScore;
       stats.searchMs += analysis.elapsedMs ?? 0;
-      stats.bestChain = Math.max(stats.bestChain, result.totalChains);
-      if (result.totalChains > 0) {
-        stats.chainEventsTotal += 1;
-      }
-      if (result.totalChains >= 7) {
-        const key = String(result.totalChains);
-        stats.chainHistogram[key] = (stats.chainHistogram[key] ?? 0) + 1;
-      }
-      if (result.topout) {
-        stats.topouts += 1;
-      }
+      recordLeafFeatures(stats, analysis);
+      recordChainResult(stats, gameStats, result);
     }
+    stats.games.push(gameStats);
   }
 
   stats.wallMs = performance.now() - startedAt;
@@ -577,19 +822,113 @@ function runCandidate(candidate, job) {
 }
 
 function roundMetrics(summary) {
+  const roundNumber = (value, digits = 3) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Number(value.toFixed(digits))
+      : value;
+  const roundObject = (object, digits = 3) =>
+    Object.fromEntries(
+      Object.entries(object ?? {}).map(([key, value]) => [
+        key,
+        roundNumber(value, digits),
+      ]),
+    );
+  const roundedGames = (summary.games ?? []).map((game) => ({
+    ...game,
+    topout: Boolean(game.topout),
+  }));
+
   return {
     ...summary,
-    objectiveScore: Number(summary.objectiveScore.toFixed(3)),
-    scorePerTurn: Number(summary.scorePerTurn.toFixed(3)),
-    below7Per10k: Number(summary.below7Per10k.toFixed(3)),
-    sevenToNinePer10k: Number(summary.sevenToNinePer10k.toFixed(3)),
-    tenPlusPer10k: Number(summary.tenPlusPer10k.toFixed(3)),
-    elevenPlusPer10k: Number(summary.elevenPlusPer10k.toFixed(3)),
-    twelvePlusPer10k: Number(summary.twelvePlusPer10k.toFixed(3)),
-    thirteenPlusPer10k: Number(summary.thirteenPlusPer10k.toFixed(3)),
-    elevenShareOf10Plus: Number((summary.elevenShareOf10Plus * 100).toFixed(2)),
-    wallMsPerTurn: Number(summary.wallMsPerTurn.toFixed(3)),
-    searchMsPerTurn: Number(summary.searchMsPerTurn.toFixed(3)),
+    objectiveScore: roundNumber(summary.objectiveScore),
+    scorePerTurn: roundNumber(summary.scorePerTurn),
+    scorePerGameMean: roundNumber(summary.scorePerGameMean),
+    scorePerGameMedian: roundNumber(summary.scorePerGameMedian),
+    scorePerGameStdDev: roundNumber(summary.scorePerGameStdDev),
+    turnsPerGameMean: roundNumber(summary.turnsPerGameMean),
+    turnsPerGameMedian: roundNumber(summary.turnsPerGameMedian),
+    bestChainPerGameMean: roundNumber(summary.bestChainPerGameMean),
+    chainEventRate: roundNumber(summary.chainEventRate * 100, 2),
+    topoutGameRate: roundNumber(summary.topoutGameRate * 100, 2),
+    tenPlusGameRate: roundNumber(summary.tenPlusGameRate * 100, 2),
+    elevenPlusGameRate: roundNumber(summary.elevenPlusGameRate * 100, 2),
+    twelvePlusGameRate: roundNumber(summary.twelvePlusGameRate * 100, 2),
+    first10PlusTurnMean: roundNumber(summary.first10PlusTurnMean),
+    topoutsPer10k: roundNumber(summary.topoutsPer10k),
+    allClearsPer10k: roundNumber(summary.allClearsPer10k),
+    zeroChainPer10k: roundNumber(summary.zeroChainPer10k),
+    oneChainPer10k: roundNumber(summary.oneChainPer10k),
+    twoToThreePer10k: roundNumber(summary.twoToThreePer10k),
+    fourToSixPer10k: roundNumber(summary.fourToSixPer10k),
+    below7Per10k: roundNumber(summary.below7Per10k),
+    sevenToNinePer10k: roundNumber(summary.sevenToNinePer10k),
+    tenPlusPer10k: roundNumber(summary.tenPlusPer10k),
+    elevenPlusPer10k: roundNumber(summary.elevenPlusPer10k),
+    twelvePlusPer10k: roundNumber(summary.twelvePlusPer10k),
+    thirteenPlusPer10k: roundNumber(summary.thirteenPlusPer10k),
+    elevenShareOf10Plus: roundNumber(summary.elevenShareOf10Plus * 100, 2),
+    wallMsPerTurn: roundNumber(summary.wallMsPerTurn),
+    searchMsPerTurn: roundNumber(summary.searchMsPerTurn),
+    leafFeatureAverages: roundObject(summary.leafFeatureAverages),
+    leafPotentialRates: roundObject(
+      Object.fromEntries(
+        Object.entries(summary.leafPotentialRates ?? {}).map(([key, value]) => [
+          key,
+          value * 100,
+        ]),
+      ),
+      2,
+    ),
+    objectiveBreakdown: roundObject(summary.objectiveBreakdown),
+    games: roundedGames,
+  };
+}
+
+function consoleMetrics(summary) {
+  const rounded = roundMetrics(summary);
+  const leaf = rounded.leafFeatureAverages ?? {};
+  return {
+    metricsVersion: rounded.metricsVersion,
+    id: rounded.id,
+    baseProfileId: rounded.baseProfileId,
+    parentId: rounded.parentId,
+    source: rounded.source,
+    totalTurns: rounded.totalTurns,
+    topouts: rounded.topouts,
+    topoutsPer10k: rounded.topoutsPer10k,
+    scorePerTurn: rounded.scorePerTurn,
+    bestChain: rounded.bestChain,
+    chains1: rounded.chains1,
+    chains2To3: rounded.chains2To3,
+    chains4To6: rounded.chains4To6,
+    chains7Plus: rounded.chains7Plus,
+    chains10Plus: rounded.chains10Plus,
+    chains11Plus: rounded.chains11Plus,
+    chains12Plus: rounded.chains12Plus,
+    chains13Plus: rounded.chains13Plus,
+    below7Per10k: rounded.below7Per10k,
+    sevenToNinePer10k: rounded.sevenToNinePer10k,
+    tenPlusPer10k: rounded.tenPlusPer10k,
+    elevenPlusPer10k: rounded.elevenPlusPer10k,
+    twelvePlusPer10k: rounded.twelvePlusPer10k,
+    scorePerGameStdDev: rounded.scorePerGameStdDev,
+    tenPlusGameRate: rounded.tenPlusGameRate,
+    elevenPlusGameRate: rounded.elevenPlusGameRate,
+    first10PlusTurnMean: rounded.first10PlusTurnMean,
+    leafPotentialRates: rounded.leafPotentialRates,
+    leafAverages: {
+      bestVirtualChain: leaf.bestVirtualChain,
+      topVirtualChainSum: leaf.topVirtualChainSum,
+      bestVirtualScore: leaf.bestVirtualScore,
+      maxHeight: leaf.maxHeight,
+      dangerCells: leaf.dangerCells,
+      hiddenCells: leaf.hiddenCells,
+      surfaceRoughness: leaf.surfaceRoughness,
+    },
+    wallMsPerTurn: rounded.wallMsPerTurn,
+    searchMsPerTurn: rounded.searchMsPerTurn,
+    objectiveScore: rounded.objectiveScore,
+    objectiveBreakdown: rounded.objectiveBreakdown,
   };
 }
 
@@ -661,7 +1000,7 @@ async function runCandidatesInParallel({ candidates, job, parallelProfiles }) {
               stage: "candidate",
               generation: job.generation,
               tier: job.stageName,
-              ...roundMetrics(message.summary),
+              ...consoleMetrics(message.summary),
             });
             sendNext();
           } else if (message.type === "stopped") {
@@ -1078,7 +1417,7 @@ async function runMain() {
         tier: stageDefinition.name,
         top: results.slice(0, args.top).map((result, rank) => ({
           rank: rank + 1,
-          ...roundMetrics(result.summary),
+          ...consoleMetrics(result.summary),
         })),
       });
     }

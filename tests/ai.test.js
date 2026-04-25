@@ -498,6 +498,37 @@ test("search AI accepts the v12 search profile", () => {
   assert.equal(analysis.settings.searchProfile, "chain_builder_v12");
 });
 
+test("search AI accepts the v13 search profile", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, searchProfile: "chain_builder_v13" },
+  });
+
+  assert.equal(analysis.objective, "chain_builder_v13");
+  assert.equal(analysis.settings.searchProfile, "chain_builder_v13");
+});
+
 test("v12AC prefers a reachable one-chain all clear", () => {
   const board = boardFromRows([
     "......",
