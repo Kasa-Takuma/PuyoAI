@@ -63,6 +63,13 @@
                 <p id="ai-search-settings-description" style="font-size: 0.75em; line-height: 1.5; color: #aaa; margin: 8px 0 0;"></p>
             </div>
 
+            <div style="margin: 20px 0; text-align: left;">
+                <label for="ai-sampling-checkbox" style="display: flex; align-items: center; gap: 10px; font-size: 0.9em; color: #ccc; cursor: pointer;">
+                    <input id="ai-sampling-checkbox" type="checkbox" checked onchange="setPuyoAISamplingEnabled(this.checked)">
+                    サンプリング探索 (未知ツモを考慮)
+                </label>
+            </div>
+
             <button id="setting-back-btn" onclick="toggleSettingMode()" style="background-color: #457b9d; color: white; margin-top: 20px; width: 100%; padding: 8px; border: none; border-radius: 5px; font-size: 0.9em; font-weight: bold; cursor: pointer;">戻る</button>
         </div>
     </div>

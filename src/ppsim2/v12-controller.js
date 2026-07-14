@@ -10,16 +10,27 @@ import {
 const PROFILE_STORAGE_KEY = "puyoai.ppsim2.searchProfile";
 const DEPTH_STORAGE_KEY = "puyoai.ppsim2.depth";
 const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
+const SAMPLING_STORAGE_KEY = "puyoai.ppsim2.sampling";
 const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 24;
+const DEFAULT_SAMPLING_ENABLED = true;
 const MAX_SEARCH_DEPTH = 51;
 const MAX_INTERNAL_NEXT_PAIRS = MAX_SEARCH_DEPTH - 1;
 const BEAM_WIDTH_OPTIONS = Object.freeze([12, 16, 24, 36, 48, 72, 96]);
+const SAMPLING_SETTINGS = Object.freeze({
+  sampleCount: 4,
+  sampleDepth: 4,
+  sampleBeamWidth: 6,
+  sampleTopK: 8,
+  sampleWeight: 1,
+});
 const SEARCH_SETTINGS = {
   depth: DEFAULT_DEPTH,
   beamWidth: DEFAULT_BEAM_WIDTH,
   searchProfile: DEFAULT_PROFILE_ID,
+  dedupe: true,
+  sampleCount: 0,
 };
 const AUTO_INTERVAL_MS = 160;
 const LIMITED_HORIZONTAL_MOVE_DELAY_MS = 90;
@@ -28,6 +39,7 @@ let autoEnabled = false;
 let autoTimer = null;
 let aiBusy = false;
 let horizontalMoveLimited = false;
+let samplingEnabled = DEFAULT_SAMPLING_ENABLED;
 
 class MovementError extends Error {
   constructor(message, phase) {
@@ -72,6 +84,23 @@ function getStoredNumber(key) {
 function storeNumber(key, value) {
   try {
     window.localStorage?.setItem(key, String(value));
+  } catch {
+    // Storage can be unavailable in private browsing or file contexts.
+  }
+}
+
+function getStoredFlag(key, defaultValue) {
+  try {
+    const value = window.localStorage?.getItem(key);
+    return value === null || value === undefined ? defaultValue : value === "1";
+  } catch {
+    return defaultValue;
+  }
+}
+
+function storeFlag(key, value) {
+  try {
+    window.localStorage?.setItem(key, value ? "1" : "0");
   } catch {
     // Storage can be unavailable in private browsing or file contexts.
   }
@@ -178,7 +207,10 @@ function updateSearchSettingsDescription() {
     SEARCH_SETTINGS.depth >= 5 || SEARCH_SETTINGS.beamWidth >= 48
       ? " 高めの設定なので、端末によっては思考が重くなります。"
       : "";
-  description.textContent = `内部では現在手 + NEXT${visibleNext} まで見ます。${warning}`;
+  const samplingText = samplingEnabled
+    ? " サンプリング探索 ON: 未知ツモを考慮するぶん思考時間が増えます。"
+    : " サンプリング探索 OFF。";
+  description.textContent = `内部では現在手 + NEXT${visibleNext} まで見ます。${warning}${samplingText}`;
 }
 
 function renderSearchSettingInputs() {
@@ -200,6 +232,11 @@ function renderSearchSettingInputs() {
       beamSelect.appendChild(option);
     }
     beamSelect.value = String(SEARCH_SETTINGS.beamWidth);
+  }
+
+  const samplingCheckbox = document.getElementById("ai-sampling-checkbox");
+  if (samplingCheckbox) {
+    samplingCheckbox.checked = samplingEnabled;
   }
 
   updateSearchSettingsDescription();
@@ -225,6 +262,29 @@ function setBeamWidth(beamWidth) {
   }
   updateSearchSettingsDescription();
   aiStatus(`AI Beam Width ${SEARCH_SETTINGS.beamWidth} に変更しました`);
+}
+
+function applySamplingSettings() {
+  Object.assign(SEARCH_SETTINGS, SAMPLING_SETTINGS);
+  if (!samplingEnabled) {
+    SEARCH_SETTINGS.sampleCount = 0;
+  }
+}
+
+function setSamplingEnabled(enabled) {
+  samplingEnabled = Boolean(enabled);
+  storeFlag(SAMPLING_STORAGE_KEY, samplingEnabled);
+  applySamplingSettings();
+  const checkbox = document.getElementById("ai-sampling-checkbox");
+  if (checkbox && checkbox.checked !== samplingEnabled) {
+    checkbox.checked = samplingEnabled;
+  }
+  updateSearchSettingsDescription();
+  aiStatus(
+    samplingEnabled
+      ? "サンプリング探索 ON に変更しました"
+      : "サンプリング探索 OFF に変更しました",
+  );
 }
 
 function getGameState() {
@@ -579,6 +639,10 @@ window.setPuyoAIBeamWidth = function setPuyoAIBeamWidth(beamWidth) {
   setBeamWidth(beamWidth);
 };
 
+window.setPuyoAISamplingEnabled = function setPuyoAISamplingEnabled(enabled) {
+  setSamplingEnabled(enabled);
+};
+
 window.toggleAIAuto = function toggleAIAuto() {
   autoEnabled = !autoEnabled;
   setAutoButton(autoEnabled);
@@ -599,6 +663,8 @@ function initializeAiControls() {
   SEARCH_SETTINGS.searchProfile = normalizeProfileId(getStoredProfileId());
   SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
   SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
+  samplingEnabled = getStoredFlag(SAMPLING_STORAGE_KEY, DEFAULT_SAMPLING_ENABLED);
+  applySamplingSettings();
   renderProfileSelect();
   renderSearchSettingInputs();
   setAutoButton(false);

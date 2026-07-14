@@ -1,5 +1,6 @@
-import { encodeAction, enumerateLegalActions } from "../core/board.js";
+import { boardToRows, encodeAction, enumerateLegalActions } from "../core/board.js";
 import { resolveTurn } from "../core/engine.js";
+import { createRng, nextPair } from "../core/randomizer.js";
 import {
   extractBoardFeatures,
   featuresToVector,
@@ -20,6 +21,33 @@ function clampDepth(depth) {
 
 function clampBeamWidth(beamWidth) {
   return Math.max(4, Math.min(96, Number.parseInt(beamWidth, 10) || 24));
+}
+
+function clampSampleCount(sampleCount) {
+  return Math.max(0, Math.min(16, Number.parseInt(sampleCount, 10) || 0));
+}
+
+function clampSampleDepth(sampleDepth) {
+  return Math.max(1, Math.min(12, Number.parseInt(sampleDepth, 10) || 4));
+}
+
+function clampSampleBeamWidth(sampleBeamWidth) {
+  return Math.max(2, Math.min(24, Number.parseInt(sampleBeamWidth, 10) || 6));
+}
+
+function clampSampleTopK(sampleTopK) {
+  return Math.max(1, Math.min(24, Number.parseInt(sampleTopK, 10) || 8));
+}
+
+function clampSampleWeight(sampleWeight) {
+  const parsed = Number.parseFloat(sampleWeight);
+  return Math.max(0, Math.min(10, Number.isFinite(parsed) ? parsed : 1));
+}
+
+function normalizeSampleSeed(sampleSeed) {
+  return typeof sampleSeed === "string" && sampleSeed.length > 0
+    ? sampleSeed
+    : "sample-v1";
 }
 
 function normalizeProfileConfig(profileConfig, fallbackProfileId) {
@@ -72,6 +100,13 @@ function normalizeSettings(settings = {}) {
     searchProfile: profileConfig?.id ?? normalizedProfile.id,
     useValueModel: valueAssist.useValueModel,
     valueWeight: valueAssist.valueWeight,
+    dedupe: settings.dedupe !== false,
+    sampleCount: clampSampleCount(settings.sampleCount),
+    sampleDepth: clampSampleDepth(settings.sampleDepth),
+    sampleBeamWidth: clampSampleBeamWidth(settings.sampleBeamWidth),
+    sampleTopK: clampSampleTopK(settings.sampleTopK),
+    sampleWeight: clampSampleWeight(settings.sampleWeight),
+    sampleSeed: normalizeSampleSeed(settings.sampleSeed),
   };
   if (profileConfig) {
     normalizedSettings.baseSearchProfile = normalizedProfile.id;
@@ -85,6 +120,10 @@ function cloneAction(action) {
     column: action.column,
     orientation: action.orientation,
   };
+}
+
+function boardKey(board) {
+  return boardToRows(board).join("");
 }
 
 function rememberCandidateNode(candidatePools, node, maxPerRoot = 3) {
@@ -534,6 +573,7 @@ function createCandidate(node, rootContext) {
     immediateChains: node.rootTurn.chains,
     immediateTopout: node.rootTurn.topout,
     immediateAllClear: node.rootTurn.allClear,
+    sampleScore: null,
     bestDepth: node.bestDepth,
     line: node.path.map((action) => cloneAction(action)),
     leafFeatures: refinedFeatures,
@@ -544,6 +584,64 @@ function createCandidate(node, rootContext) {
       topout: node.lastResult.topout,
       allClear: node.lastResult.allClear,
     },
+  };
+}
+
+function runSampleRollout({ startBoard, pairs, profileId, profileConfig, beamWidth }) {
+  let frontier = [{ board: startBoard, cumValue: 0 }];
+  let expandedNodeCount = 0;
+
+  for (const pair of pairs) {
+    const expanded = [];
+    const topoutValues = [];
+
+    for (const node of frontier) {
+      const actions = enumerateLegalActions(node.board, pair);
+      for (const action of actions) {
+        const result = resolveTurn(node.board, pair, action);
+        expandedNodeCount += 1;
+        const turnValue = scoreTurnResult(result, profileId, {}, profileConfig);
+
+        if (result.topout) {
+          topoutValues.push(node.cumValue + turnValue);
+          continue;
+        }
+
+        const cumValue = node.cumValue + turnValue;
+        const cheap = scoreBoardFeatures(
+          extractBoardFeatures(result.finalBoard, { includeVirtualChains: false }),
+          profileId,
+          profileConfig,
+        );
+        expanded.push({
+          board: result.finalBoard,
+          cumValue,
+          nodeScore: cumValue + cheap,
+        });
+      }
+    }
+
+    if (expanded.length === 0) {
+      return { value: Math.max(...topoutValues), expandedNodeCount };
+    }
+
+    const bestByKey = new Map();
+    for (const child of expanded) {
+      const key = boardKey(child.board);
+      const existing = bestByKey.get(key);
+      if (!existing || child.nodeScore > existing.nodeScore) {
+        bestByKey.set(key, child);
+      }
+    }
+
+    const survivors = [...bestByKey.values()];
+    survivors.sort((left, right) => right.nodeScore - left.nodeScore);
+    frontier = survivors.slice(0, beamWidth);
+  }
+
+  return {
+    value: Math.max(...frontier.map((node) => node.nodeScore)),
+    expandedNodeCount,
   };
 }
 
@@ -613,8 +711,10 @@ export function searchBestMove({
           profileConfig,
         );
         expandedNodeCount += 1;
-        rememberCandidateNode(candidatePools, child);
         expanded.push(child);
+        if (!normalizedSettings.dedupe) {
+          rememberCandidateNode(candidatePools, child);
+        }
       }
     }
 
@@ -622,28 +722,111 @@ export function searchBestMove({
       break;
     }
 
-    expanded.sort((left, right) => right.searchScore - left.searchScore);
-    frontier = expanded.slice(0, normalizedSettings.beamWidth);
+    let survivors = expanded;
+    if (normalizedSettings.dedupe) {
+      const bestByKey = new Map();
+      for (const child of expanded) {
+        const key = `${child.rootKey}|${boardKey(child.board)}`;
+        const existing = bestByKey.get(key);
+        if (!existing || child.searchScore > existing.searchScore) {
+          bestByKey.set(key, child);
+        }
+      }
+      survivors = [...bestByKey.values()];
+      for (const child of survivors) {
+        rememberCandidateNode(candidatePools, child);
+      }
+    }
+
+    survivors.sort((left, right) => right.searchScore - left.searchScore);
+    frontier = survivors.slice(0, normalizedSettings.beamWidth);
   }
 
-  const candidates = [...candidatePools.values()]
-    .map((nodes) =>
-      nodes
-        .map((node) =>
-          createCandidate(node, {
-            currentPair,
-            nextQueue,
-            turn,
-            totalScore,
-            valueModel: activeValueModel,
-            valueWeight: normalizedSettings.valueWeight,
-          }),
-        )
-        .sort((left, right) => right.searchScore - left.searchScore)[0],
-    )
-    .sort(
-    (left, right) => right.searchScore - left.searchScore,
+  const candidatePairs = [...candidatePools.values()].map((nodes) => {
+    const scoredNodes = nodes.map((node) => ({
+      node,
+      candidate: createCandidate(node, {
+        currentPair,
+        nextQueue,
+        turn,
+        totalScore,
+        valueModel: activeValueModel,
+        valueWeight: normalizedSettings.valueWeight,
+      }),
+    }));
+    scoredNodes.sort(
+      (left, right) => right.candidate.searchScore - left.candidate.searchScore,
+    );
+    return scoredNodes[0];
+  });
+  candidatePairs.sort(
+    (left, right) => right.candidate.searchScore - left.candidate.searchScore,
   );
+
+  let candidates = candidatePairs.map((pair) => pair.candidate);
+  let sampling = null;
+
+  if (normalizedSettings.sampleCount > 0 && candidatePairs.length > 0) {
+    const rootBoardKey = boardKey(board);
+    const rng = createRng(
+      `sample:${normalizedSettings.sampleSeed}:${turn}:${rootBoardKey}`,
+    );
+    const sequences = Array.from({ length: normalizedSettings.sampleCount }, () =>
+      Array.from({ length: normalizedSettings.sampleDepth }, () => nextPair(rng)),
+    );
+
+    const topCandidatePairs = candidatePairs.slice(0, normalizedSettings.sampleTopK);
+    for (const { node, candidate } of topCandidatePairs) {
+      const remainingKnown = nextQueue.slice(node.bestDepth - 1);
+      const effectiveSamples =
+        remainingKnown.length >= normalizedSettings.sampleDepth
+          ? 1
+          : normalizedSettings.sampleCount;
+
+      let sampleValueSum = 0;
+      for (let s = 0; s < effectiveSamples; s += 1) {
+        const pairs = [];
+        for (let i = 0; i < normalizedSettings.sampleDepth; i += 1) {
+          pairs.push(remainingKnown[i] ?? sequences[s][i - remainingKnown.length]);
+        }
+        const rollout = runSampleRollout({
+          startBoard: node.board,
+          pairs,
+          profileId,
+          profileConfig,
+          beamWidth: normalizedSettings.sampleBeamWidth,
+        });
+        sampleValueSum += rollout.value;
+        expandedNodeCount += rollout.expandedNodeCount;
+      }
+
+      const sampleScore = sampleValueSum / effectiveSamples;
+      candidate.staticScore = candidate.searchScore;
+      candidate.searchScore =
+        candidate.staticScore + normalizedSettings.sampleWeight * sampleScore;
+      candidate.sampleScore = sampleScore;
+    }
+
+    const sampledCandidates = candidates.filter(
+      (candidate) => candidate.sampleScore !== null,
+    );
+    const unsampledCandidates = candidates.filter(
+      (candidate) => candidate.sampleScore === null,
+    );
+    sampledCandidates.sort((left, right) => right.searchScore - left.searchScore);
+    unsampledCandidates.sort((left, right) => right.searchScore - left.searchScore);
+    candidates = [...sampledCandidates, ...unsampledCandidates];
+
+    sampling = {
+      sampleCount: normalizedSettings.sampleCount,
+      sampleDepth: normalizedSettings.sampleDepth,
+      sampleBeamWidth: normalizedSettings.sampleBeamWidth,
+      sampleTopK: normalizedSettings.sampleTopK,
+      sampleWeight: normalizedSettings.sampleWeight,
+      evaluatedCandidates: topCandidatePairs.length,
+    };
+  }
+
   const bestAction = candidates[0]?.action ?? cloneAction(rootActions[0]);
   const bestScore = candidates[0]?.searchScore ?? -Infinity;
   const elapsedMs = performance.now() - startedAt;
@@ -663,6 +846,7 @@ export function searchBestMove({
     bestActionKey: bestAction ? encodeAction(bestAction) : null,
     bestScore,
     candidates,
+    sampling,
     expandedNodeCount,
     candidateCount: candidates.length,
     elapsedMs,

@@ -36,6 +36,11 @@ For the ppsim2-based battle page using the PuyoAI v13 search profile, open:
 
 `http://localhost:4173/ppsim2/`
 
+Sampling search is enabled by default on this page (see the `sampleCount`
+settings under `Search AI` below), which raises per-move search time from
+roughly 230ms to roughly 590ms. Turn it off from the settings panel if you
+need faster moves.
+
 The original viewer and batch runner remain separate from this page.
 
 ## Deploy To GitHub Pages
@@ -68,6 +73,53 @@ The right-side AI panel supports:
 - `Stop`: stop continuous execution after the current search finishes
 - `Export Dataset`: download the accumulated search records as JSON
 - `Value Assist`: in Search mode, add the exported `value_mlp` prediction to the search leaf score
+
+`searchBestMove` accepts these settings, in addition to `depth`, `beamWidth`,
+and `searchProfile`:
+
+- `dedupe` (default `true`): collapse duplicate boards reached by different
+  action paths at each search layer, keeping only the best-scoring node per
+  board
+- `sampleCount` (default `0`): number of chance-node rollouts to run per
+  evaluated candidate against unknown future pairs; `0` disables sampling
+- `sampleDepth` (default `4`): number of sampled future pairs per rollout
+- `sampleBeamWidth` (default `6`): beam width used inside each sampled rollout
+- `sampleTopK` (default `8`): how many of the top search candidates get
+  sampled
+- `sampleWeight` (default `1`): how much the averaged sample rollout value is
+  mixed into a candidate's search score
+- `sampleSeed` (default `"sample-v1"`): seed used to draw the sampled future
+  pairs deterministically
+
+Sampling search evaluates chance nodes for pairs beyond the visible NEXT
+queue, so a candidate that only looks good against known pairs but is fragile
+against unknown ones scores lower. It roughly quadruples the 12+ chain rate in
+`npm run compare:search` benchmarks (see below) at the cost of about 2.5x the
+per-move search time.
+
+## Comparing Search Configurations
+
+`npm run compare:search` runs one or more named search-setting configs across
+simulated games and reports chain-length histograms, score, topout rate, and
+search time per move.
+
+```bash
+npm run compare:search -- --turns 2400 --games 2 --seed compare-v1 --configs baseline,dedupe,sampled
+```
+
+Useful flags:
+
+- `--turns N`: total turn budget per config across all games
+- `--games N`: number of games per config
+- `--seed TEXT`: root seed; each game uses `<seed>:game-<index>`
+- `--depth N`, `--beam N`, `--profile ID`: base search settings shared by all
+  configs
+- `--visible-nexts N`: next queue length passed to the search
+- `--configs a,b,c`: comma separated config labels to run (see
+  `tools/compare-search.js` for the built-in `baseline`, `dedupe`, `sampled`,
+  and `sampled_deep` configs)
+- `--parallel N`: worker count
+- `--out PATH`: JSON report path (default `log/puyoai-search-compare-<iso>.json`)
 
 ## Batch Runner
 

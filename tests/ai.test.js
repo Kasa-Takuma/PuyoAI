@@ -780,3 +780,147 @@ test("feature extraction sees the virtual double-chain trigger on the demo board
   assert.ok(features.bestVirtualScore >= 360);
   assert.ok(features.virtualChainCount2Plus >= 1);
 });
+
+test("sampling settings are echoed and default off", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24 },
+  });
+
+  assert.equal(analysis.settings.sampleCount, 0);
+  assert.equal(analysis.settings.dedupe, true);
+  assert.equal(analysis.sampling, null);
+});
+
+test("sampled search is deterministic", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const nextQueue = [{ axis: COLORS.BLUE, child: COLORS.YELLOW }];
+  const settings = {
+    depth: 2,
+    beamWidth: 8,
+    searchProfile: "chain_builder_v13",
+    sampleCount: 3,
+    sampleDepth: 3,
+    sampleBeamWidth: 4,
+    sampleTopK: 4,
+  };
+
+  const first = searchBestMove({ board, currentPair, nextQueue, settings });
+  const second = searchBestMove({ board, currentPair, nextQueue, settings });
+
+  assert.equal(first.bestActionKey, second.bestActionKey);
+  assert.equal(first.bestScore, second.bestScore);
+  assert.equal(first.candidates[0].sampleScore, second.candidates[0].sampleScore);
+  assert.ok(first.sampling.evaluatedCandidates >= 1);
+});
+
+test("dedupe does not lose the best action and reduces node count", () => {
+  const board = boardFromRows([
+    "......",
+    "..G...",
+    "..B...",
+    "..Y...",
+    "..R...",
+    "..G...",
+    "..B...",
+    "..Y...",
+    "..R...",
+    "..G...",
+    "..B...",
+    "..Y...",
+  ]);
+  const currentPair = {
+    axis: COLORS.BLUE,
+    child: COLORS.YELLOW,
+  };
+  const nextQueue = [
+    { axis: COLORS.RED, child: COLORS.GREEN },
+    { axis: COLORS.GREEN, child: COLORS.BLUE },
+  ];
+
+  const withDedupe = searchBestMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { depth: 3, beamWidth: 24, dedupe: true },
+  });
+  const withoutDedupe = searchBestMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { depth: 3, beamWidth: 24, dedupe: false },
+  });
+
+  assert.ok(withDedupe.expandedNodeCount <= withoutDedupe.expandedNodeCount);
+  assert.ok(withDedupe.bestAction !== null);
+  assert.ok(withoutDedupe.bestAction !== null);
+});
+
+test("rollout survives a near-topout board", () => {
+  const board = boardFromRows([
+    "......",
+    "..G...",
+    "..B...",
+    "..Y...",
+    "..R...",
+    "..G...",
+    "..B...",
+    "..Y...",
+    "..R...",
+    "..G...",
+    "..B...",
+    "..Y...",
+  ]);
+  const currentPair = {
+    axis: COLORS.BLUE,
+    child: COLORS.YELLOW,
+  };
+
+  const analysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, sampleCount: 2, sampleDepth: 2 },
+  });
+  const result = resolveTurn(board, currentPair, analysis.bestAction);
+
+  assert.equal(result.topout, false);
+});
