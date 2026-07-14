@@ -49,6 +49,7 @@ function deriveGameSeed(seedBase, seedOffset) {
 
 function normalizeAiSettings(aiSettings) {
   const valueAssist = normalizeValueAssistSettings(aiSettings);
+  const parsedSampleWeight = Number.parseFloat(aiSettings?.sampleWeight);
   return {
     depth: Math.max(1, Math.min(4, Number.parseInt(aiSettings?.depth, 10) || 3)),
     beamWidth: Math.max(
@@ -61,6 +62,27 @@ function normalizeAiSettings(aiSettings) {
         : DEFAULT_SEARCH_PROFILE_ID,
     useValueModel: valueAssist.useValueModel,
     valueWeight: valueAssist.valueWeight,
+    dedupe: aiSettings?.dedupe !== false,
+    sampleCount: Math.max(
+      0,
+      Math.min(16, Number.parseInt(aiSettings?.sampleCount, 10) || 0),
+    ),
+    sampleDepth: Math.max(
+      1,
+      Math.min(12, Number.parseInt(aiSettings?.sampleDepth, 10) || 4),
+    ),
+    sampleBeamWidth: Math.max(
+      2,
+      Math.min(24, Number.parseInt(aiSettings?.sampleBeamWidth, 10) || 6),
+    ),
+    sampleTopK: Math.max(
+      1,
+      Math.min(24, Number.parseInt(aiSettings?.sampleTopK, 10) || 8),
+    ),
+    sampleWeight: Math.max(
+      0,
+      Math.min(10, Number.isFinite(parsedSampleWeight) ? parsedSampleWeight : 1),
+    ),
   };
 }
 

@@ -20,6 +20,11 @@ import {
   previewQueue,
 } from "./state.js";
 
+function isSelectableSearchProfile(profile) {
+  const match = /^chain_builder_v(\d+)(?:_|$)/.exec(profile.id);
+  return match ? Number.parseInt(match[1], 10) >= 12 : false;
+}
+
 const COLOR_CLASS = {
   [COLORS.EMPTY]: "empty",
   [COLORS.RED]: "red",
@@ -91,13 +96,6 @@ function valueAssistLabel(state) {
   return state.aiSettings.useValueModel
     ? `on / weight ${state.aiSettings.valueWeight}`
     : "off";
-}
-
-function selectedLearnedModelLabel(state) {
-  return (
-    state.learnedModels.find((model) => model.id === state.selectedLearnedModelId)?.label ??
-    "No model"
-  );
 }
 
 function aiStatusLabel(state) {
@@ -319,8 +317,14 @@ export function renderApp(root, state) {
   const aiBusyDisabled = state.aiBusy ? "disabled" : "";
   const aiSettingsDisabled =
     state.aiBusy || state.aiMode === "learned" ? "disabled" : "";
-  const learnedModelDisabled =
-    state.aiBusy || state.learnedModels.length === 0 ? "disabled" : "";
+  const selectableSearchProfiles = SEARCH_PROFILES.filter(isSelectableSearchProfile);
+  const currentSearchProfile = SEARCH_PROFILES.find(
+    (profile) => profile.id === state.aiSettings.searchProfile,
+  );
+  const searchProfileOptions =
+    currentSearchProfile && !selectableSearchProfiles.includes(currentSearchProfile)
+      ? [...selectableSearchProfiles, currentSearchProfile]
+      : selectableSearchProfiles;
 
   root.innerHTML = `
     <div class="shell">
@@ -420,65 +424,18 @@ export function renderApp(root, state) {
           </div>
 
           <div class="control-grid ai-grid">
-            <label class="field">
-              <span>AI Mode</span>
-              <select id="ai-mode" ${aiBusyDisabled}>
-                <option value="search" ${state.aiMode === "search" ? "selected" : ""}>Search</option>
-                <option value="learned" ${state.aiMode === "learned" ? "selected" : ""}>Learned</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Learned Model</span>
-              <select id="learned-model" ${learnedModelDisabled}>
-                ${
-                  state.learnedModels.length > 0
-                    ? state.learnedModels
-                        .map(
-                          (model) => `
-                            <option value="${model.id}" ${
-                              model.id === state.selectedLearnedModelId ? "selected" : ""
-                            }>${model.label}</option>
-                          `,
-                        )
-                        .join("")
-                    : `<option value="">No learned models</option>`
-                }
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Depth</span>
-              <select id="ai-depth" ${aiSettingsDisabled}>
-                ${[1, 2, 3, 4]
-                  .map(
-                    (depth) => `
-                      <option value="${depth}" ${
-                        depth === state.aiSettings.depth ? "selected" : ""
-                      }>${depth}</option>
-                    `,
-                  )
-                  .join("")}
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Beam Width</span>
-              <input id="ai-beam" type="number" min="4" max="96" step="1" value="${
-                state.aiSettings.beamWidth
-              }" ${aiSettingsDisabled} />
-            </label>
-
             <label class="field wide">
               <span>Search Profile</span>
               <select id="ai-search-profile" ${aiSettingsDisabled}>
-                ${SEARCH_PROFILES.map(
-                  (profile) => `
-                    <option value="${profile.id}" ${
-                      profile.id === state.aiSettings.searchProfile ? "selected" : ""
-                    }>${profile.label}</option>
-                  `,
-                ).join("")}
+                ${searchProfileOptions
+                  .map(
+                    (profile) => `
+                      <option value="${profile.id}" ${
+                        profile.id === state.aiSettings.searchProfile ? "selected" : ""
+                      }>${profile.label}</option>
+                    `,
+                  )
+                  .join("")}
               </select>
             </label>
 
@@ -536,19 +493,13 @@ export function renderApp(root, state) {
           </div>
 
           <div class="ai-note">
-            <span>${
-              state.aiMode === "learned"
-                ? `selected model: ${selectedLearnedModelLabel(state)}`
-                : `dataset samples: ${state.aiDataset.length}`
-            }</span>
+            <span>dataset samples: ${state.aiDataset.length}</span>
             <span>${
               state.aiLastError
                 ? `error: ${state.aiLastError}`
-                : state.aiMode === "learned"
-                  ? "learned mode は保存済み MLP をそのまま推論に使います。"
-                  : state.aiSettings.useValueModel
-                    ? "value assist は探索の葉評価に value_mlp の未来価値を加算します。"
-                    : "探索結果はそのまま学習用 JSON に出力できます。"
+                : state.aiSettings.useValueModel
+                  ? "value assist は探索の葉評価に value_mlp の未来価値を加算します。"
+                  : "探索結果はそのまま学習用 JSON に出力できます。"
             }</span>
           </div>
 

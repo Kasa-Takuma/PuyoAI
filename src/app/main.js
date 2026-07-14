@@ -15,11 +15,9 @@ import {
   createGameState,
   recordAiAnalysis,
   resetReplayToLatest,
-  setAiMode,
   setLearnedModels,
   setAiError,
   setAiSetting,
-  setSelectedLearnedModelId,
   setAiStatus,
   setSelectedAction,
   startReplay,
@@ -27,8 +25,20 @@ import {
   stopReplay,
 } from "./state.js";
 
+const VIEWER_AI_SETTINGS = Object.freeze({
+  depth: 3,
+  beamWidth: 24,
+  searchProfile: "chain_builder_v13",
+  dedupe: true,
+  sampleCount: 4,
+  sampleDepth: 4,
+  sampleBeamWidth: 6,
+  sampleTopK: 8,
+  sampleWeight: 1,
+});
+
 const root = document.querySelector("#app");
-let state = createGameState();
+let state = createGameState({ aiSettings: VIEWER_AI_SETTINGS });
 let aiWorker = null;
 let nextAiRequestId = 1;
 const pendingAiRequests = new Map();
@@ -316,28 +326,6 @@ function bindEvents() {
     }
 
     startReplay(state, rerender);
-    rerender();
-  });
-
-  document.querySelector("#ai-depth")?.addEventListener("change", (event) => {
-    setAiSetting(state, "depth", event.target.value);
-    rerender();
-  });
-
-  document.querySelector("#ai-mode")?.addEventListener("change", (event) => {
-    stopAiLoop();
-    setAiMode(state, event.target.value);
-    rerender();
-  });
-
-  document.querySelector("#learned-model")?.addEventListener("change", (event) => {
-    stopAiLoop();
-    setSelectedLearnedModelId(state, event.target.value);
-    rerender();
-  });
-
-  document.querySelector("#ai-beam")?.addEventListener("change", (event) => {
-    setAiSetting(state, "beamWidth", event.target.value);
     rerender();
   });
 
