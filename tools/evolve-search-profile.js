@@ -86,6 +86,12 @@ function parseArgs(argv) {
     output: null,
     resumeReport: null,
     baseProfileExplicit: false,
+    sampleCount: 0,
+    sampleDepth: 4,
+    sampleBeamWidth: 6,
+    sampleTopK: 8,
+    sampleWeight: 1,
+    visibleNexts: 0,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -164,6 +170,27 @@ function parseArgs(argv) {
     } else if (arg === "--resume-report") {
       args.resumeReport = next || args.resumeReport;
       index += 1;
+    } else if (arg === "--sample-count") {
+      args.sampleCount = Math.max(0, Number.parseInt(next, 10) || args.sampleCount);
+      index += 1;
+    } else if (arg === "--sample-depth") {
+      args.sampleDepth = Math.max(1, Number.parseInt(next, 10) || args.sampleDepth);
+      index += 1;
+    } else if (arg === "--sample-beam-width") {
+      args.sampleBeamWidth = Math.max(
+        1,
+        Number.parseInt(next, 10) || args.sampleBeamWidth,
+      );
+      index += 1;
+    } else if (arg === "--sample-top-k") {
+      args.sampleTopK = Math.max(1, Number.parseInt(next, 10) || args.sampleTopK);
+      index += 1;
+    } else if (arg === "--sample-weight") {
+      args.sampleWeight = Number.parseFloat(next) || args.sampleWeight;
+      index += 1;
+    } else if (arg === "--visible-nexts") {
+      args.visibleNexts = Math.max(0, Number.parseInt(next, 10) || args.visibleNexts);
+      index += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -197,6 +224,12 @@ Options:
   --beam-width N            Beam width. Default: 24
   --seed TEXT|auto          Run seed. auto creates a random seed. Default: auto
   --resume-report PATH      Continue from a previous evolution report.
+  --sample-count N          Rollout sample count per candidate move. 0 disables sampling. Default: 0
+  --sample-depth N          Sampled rollout depth. Default: 4
+  --sample-beam-width N     Beam width used during sampled rollouts. Default: 6
+  --sample-top-k N          Number of top candidates to sample. Default: 8
+  --sample-weight X         Weight applied to the sampled rollout score. Default: 1
+  --visible-nexts N         Next queue length passed to the search. 0 means unlimited. Default: 0
   --output PATH             JSON report path. Default: log/puyoai-evolution-report-<iso>.json`);
 }
 
@@ -777,6 +810,11 @@ function runCandidate(candidate, job) {
     beamWidth: job.beamWidth,
     searchProfile: candidate.baseProfileId,
     profileConfig: candidate.profileConfig ?? null,
+    sampleCount: job.sampleCount,
+    sampleDepth: job.sampleDepth,
+    sampleBeamWidth: job.sampleBeamWidth,
+    sampleTopK: job.sampleTopK,
+    sampleWeight: job.sampleWeight,
   };
 
   for (
@@ -801,8 +839,12 @@ function runCandidate(candidate, job) {
       const analysis = searchBestMove({
         board: state.board,
         currentPair: state.currentPair,
-        nextQueue: state.nextQueue,
+        nextQueue:
+          job.visibleNexts > 0
+            ? state.nextQueue.slice(0, job.visibleNexts)
+            : state.nextQueue,
         settings: aiSettings,
+        turn: state.turn,
       });
       const result = applyAction(state, analysis.bestAction, "evolve");
       if (!result) {
@@ -1381,6 +1423,12 @@ async function runMain() {
         seeds,
         depth: args.depth,
         beamWidth: args.beamWidth,
+        sampleCount: args.sampleCount,
+        sampleDepth: args.sampleDepth,
+        sampleBeamWidth: args.sampleBeamWidth,
+        sampleTopK: args.sampleTopK,
+        sampleWeight: args.sampleWeight,
+        visibleNexts: args.visibleNexts,
       };
 
       printJson({
