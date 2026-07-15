@@ -102,6 +102,31 @@ const CONFIGS = [
       sampleValueWeight: 80000,
     },
   },
+  {
+    label: "scaled",
+    settings: {
+      dedupe: true,
+      beamWidth: 48,
+      sampleCount: 8,
+      sampleDepth: 4,
+      sampleBeamWidth: 8,
+      sampleTopK: 12,
+      sampleWeight: 1,
+    },
+  },
+  {
+    label: "scaled_refine",
+    settings: {
+      dedupe: true,
+      beamWidth: 48,
+      sampleCount: 8,
+      sampleDepth: 4,
+      sampleBeamWidth: 8,
+      sampleTopK: 12,
+      sampleWeight: 1,
+      sampleRefineLeaf: true,
+    },
+  },
   { label: "baseline", settings: { dedupe: true, sampleCount: 0 } },
 ];
 
