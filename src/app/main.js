@@ -27,13 +27,13 @@ import {
 
 const VIEWER_AI_SETTINGS = Object.freeze({
   depth: 3,
-  beamWidth: 24,
+  beamWidth: 48,
   searchProfile: "chain_builder_v13",
   dedupe: true,
-  sampleCount: 4,
+  sampleCount: 8,
   sampleDepth: 4,
-  sampleBeamWidth: 6,
-  sampleTopK: 8,
+  sampleBeamWidth: 8,
+  sampleTopK: 12,
   sampleWeight: 1,
 });
 

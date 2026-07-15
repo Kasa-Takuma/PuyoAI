@@ -37,9 +37,11 @@ For the ppsim2-based battle page using the PuyoAI v13 search profile, open:
 `http://localhost:4173/ppsim2/`
 
 Sampling search is enabled by default on this page (see the `sampleCount`
-settings under `Search AI` below), which raises per-move search time from
-roughly 230ms to roughly 590ms. Turn it off from the settings panel if you
-need faster moves.
+settings under `Search AI` below), using the `scaled` configuration
+(`beamWidth: 48`, `sampleCount: 8`, `sampleDepth: 4`, `sampleBeamWidth: 8`,
+`sampleTopK: 12`, `sampleWeight: 1`). Thanks to the faster search core, this
+raises per-move search time from roughly 16ms (`baseline`) to roughly 400ms
+(`scaled`). Turn it off from the settings panel if you need faster moves.
 
 The original viewer and batch runner remain separate from this page.
 
@@ -93,9 +95,12 @@ and `searchProfile`:
 
 Sampling search evaluates chance nodes for pairs beyond the visible NEXT
 queue, so a candidate that only looks good against known pairs but is fragile
-against unknown ones scores lower. It roughly quadruples the 12+ chain rate in
-`npm run compare:search` benchmarks (see below) at the cost of about 2.5x the
-per-move search time.
+against unknown ones scores lower. The default `scaled` configuration
+(`beamWidth: 48`, `sampleCount: 8`, `sampleBeamWidth: 8`, `sampleTopK: 12`)
+roughly doubles the 12+ chain rate of the previous `sampled` configuration in
+`npm run compare:search` benchmarks (see below), from 12.7 to 25.7 per 10k
+turns, at the cost of raising per-move search time from about 16ms
+(`baseline`) to about 400ms.
 
 ## Comparing Search Configurations
 
@@ -115,9 +120,9 @@ Useful flags:
 - `--depth N`, `--beam N`, `--profile ID`: base search settings shared by all
   configs
 - `--visible-nexts N`: next queue length passed to the search
-- `--configs a,b,c`: comma separated config labels to run (see
-  `tools/compare-search.js` for the built-in `baseline`, `dedupe`, `sampled`,
-  and `sampled_deep` configs)
+- `--configs a,b,c`: comma separated config labels to run (see the `CONFIGS`
+  list in `tools/compare-search.js` for the built-in configs, e.g. `baseline`,
+  `sampled`, `refine`, `scaled`)
 - `--parallel N`: worker count
 - `--out PATH`: JSON report path (default `log/puyoai-search-compare-<iso>.json`)
 

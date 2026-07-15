@@ -14,16 +14,16 @@ const SAMPLING_STORAGE_KEY = "puyoai.ppsim2.sampling";
 const FAST_AUTO_STORAGE_KEY = "puyoai.ppsim2.fastAuto";
 const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
-const DEFAULT_BEAM_WIDTH = 24;
+const DEFAULT_BEAM_WIDTH = 48;
 const DEFAULT_SAMPLING_ENABLED = true;
 const MAX_SEARCH_DEPTH = 51;
 const MAX_INTERNAL_NEXT_PAIRS = MAX_SEARCH_DEPTH - 1;
 const BEAM_WIDTH_OPTIONS = Object.freeze([12, 16, 24, 36, 48, 72, 96]);
 const SAMPLING_SETTINGS = Object.freeze({
-  sampleCount: 4,
+  sampleCount: 8,
   sampleDepth: 4,
-  sampleBeamWidth: 6,
-  sampleTopK: 8,
+  sampleBeamWidth: 8,
+  sampleTopK: 12,
   sampleWeight: 1,
 });
 const SEARCH_SETTINGS = {
