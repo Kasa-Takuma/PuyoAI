@@ -11,6 +11,7 @@ const PROFILE_STORAGE_KEY = "puyoai.ppsim2.searchProfile";
 const DEPTH_STORAGE_KEY = "puyoai.ppsim2.depth";
 const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
 const SAMPLING_STORAGE_KEY = "puyoai.ppsim2.sampling";
+const FAST_AUTO_STORAGE_KEY = "puyoai.ppsim2.fastAuto";
 const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 24;
@@ -33,6 +34,7 @@ const SEARCH_SETTINGS = {
   sampleCount: 0,
 };
 const AUTO_INTERVAL_MS = 160;
+const FAST_AUTO_INTERVAL_MS = 0;
 const LIMITED_HORIZONTAL_MOVE_DELAY_MS = 90;
 
 let autoEnabled = false;
@@ -40,6 +42,7 @@ let autoTimer = null;
 let aiBusy = false;
 let horizontalMoveLimited = false;
 let samplingEnabled = DEFAULT_SAMPLING_ENABLED;
+let fastAutoEnabled = false;
 
 class MovementError extends Error {
   constructor(message, phase) {
@@ -210,7 +213,10 @@ function updateSearchSettingsDescription() {
   const samplingText = samplingEnabled
     ? " サンプリング探索 ON: 未知ツモを考慮するぶん思考時間が増えます。"
     : " サンプリング探索 OFF。";
-  description.textContent = `内部では現在手 + NEXT${visibleNext} まで見ます。${warning}${samplingText}`;
+  const fastAutoText = fastAutoEnabled
+    ? " 高速オート ON: 設置間隔の待機をスキップします。"
+    : "";
+  description.textContent = `内部では現在手 + NEXT${visibleNext} まで見ます。${warning}${samplingText}${fastAutoText}`;
 }
 
 function renderSearchSettingInputs() {
@@ -237,6 +243,11 @@ function renderSearchSettingInputs() {
   const samplingCheckbox = document.getElementById("ai-sampling-checkbox");
   if (samplingCheckbox) {
     samplingCheckbox.checked = samplingEnabled;
+  }
+
+  const fastAutoCheckbox = document.getElementById("ai-fast-auto-checkbox");
+  if (fastAutoCheckbox) {
+    fastAutoCheckbox.checked = fastAutoEnabled;
   }
 
   updateSearchSettingsDescription();
@@ -284,6 +295,21 @@ function setSamplingEnabled(enabled) {
     samplingEnabled
       ? "サンプリング探索 ON に変更しました"
       : "サンプリング探索 OFF に変更しました",
+  );
+}
+
+function setFastAutoEnabled(enabled) {
+  fastAutoEnabled = Boolean(enabled);
+  storeFlag(FAST_AUTO_STORAGE_KEY, fastAutoEnabled);
+  const checkbox = document.getElementById("ai-fast-auto-checkbox");
+  if (checkbox && checkbox.checked !== fastAutoEnabled) {
+    checkbox.checked = fastAutoEnabled;
+  }
+  updateSearchSettingsDescription();
+  aiStatus(
+    fastAutoEnabled
+      ? "高速オート ON（設置間隔の待機なし）に変更しました"
+      : "高速オート OFF に変更しました",
   );
 }
 
@@ -604,7 +630,7 @@ function scheduleAutoTick() {
     }
 
     scheduleAutoTick();
-  }, AUTO_INTERVAL_MS);
+  }, fastAutoEnabled ? FAST_AUTO_INTERVAL_MS : AUTO_INTERVAL_MS);
 }
 
 window.PuyoAI = {
@@ -643,6 +669,10 @@ window.setPuyoAISamplingEnabled = function setPuyoAISamplingEnabled(enabled) {
   setSamplingEnabled(enabled);
 };
 
+window.setPuyoAIFastAutoEnabled = function setPuyoAIFastAutoEnabled(enabled) {
+  setFastAutoEnabled(enabled);
+};
+
 window.toggleAIAuto = function toggleAIAuto() {
   autoEnabled = !autoEnabled;
   setAutoButton(autoEnabled);
@@ -664,6 +694,7 @@ function initializeAiControls() {
   SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
   SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
   samplingEnabled = getStoredFlag(SAMPLING_STORAGE_KEY, DEFAULT_SAMPLING_ENABLED);
+  fastAutoEnabled = getStoredFlag(FAST_AUTO_STORAGE_KEY, false);
   applySamplingSettings();
   renderProfileSelect();
   renderSearchSettingInputs();
