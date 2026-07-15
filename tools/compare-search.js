@@ -127,6 +127,18 @@ const CONFIGS = [
       sampleRefineLeaf: true,
     },
   },
+  {
+    label: "scaled_plus",
+    settings: {
+      dedupe: true,
+      beamWidth: 64,
+      sampleCount: 12,
+      sampleDepth: 4,
+      sampleBeamWidth: 8,
+      sampleTopK: 16,
+      sampleWeight: 1,
+    },
+  },
   { label: "baseline", settings: { dedupe: true, sampleCount: 0 } },
 ];
 
