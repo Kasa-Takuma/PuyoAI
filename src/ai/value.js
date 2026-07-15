@@ -162,7 +162,7 @@ function forward(model, input) {
   return Array.from(activations);
 }
 
-function hydrateModel(model) {
+export function hydrateModel(model) {
   return {
     ...model,
     maxNextPairs: model.maxNextPairs ?? DEFAULT_MAX_NEXT_PAIRS,

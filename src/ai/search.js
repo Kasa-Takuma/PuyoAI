@@ -44,6 +44,11 @@ function clampSampleWeight(sampleWeight) {
   return Math.max(0, Math.min(10, Number.isFinite(parsed) ? parsed : 1));
 }
 
+function clampSampleValueWeight(sampleValueWeight) {
+  const parsed = Number.parseFloat(sampleValueWeight);
+  return Math.max(0, Math.min(1_000_000, Number.isFinite(parsed) ? parsed : 0));
+}
+
 function normalizeSampleSeed(sampleSeed) {
   return typeof sampleSeed === "string" && sampleSeed.length > 0
     ? sampleSeed
@@ -107,6 +112,8 @@ function normalizeSettings(settings = {}) {
     sampleTopK: clampSampleTopK(settings.sampleTopK),
     sampleWeight: clampSampleWeight(settings.sampleWeight),
     sampleSeed: normalizeSampleSeed(settings.sampleSeed),
+    sampleRefineLeaf: settings.sampleRefineLeaf === true,
+    sampleValueWeight: clampSampleValueWeight(settings.sampleValueWeight),
   };
   if (profileConfig) {
     normalizedSettings.baseSearchProfile = normalizedProfile.id;
@@ -587,7 +594,15 @@ function createCandidate(node, rootContext) {
   };
 }
 
-function runSampleRollout({ startBoard, pairs, profileId, profileConfig, beamWidth }) {
+function runSampleRollout({
+  startBoard,
+  pairs,
+  profileId,
+  profileConfig,
+  beamWidth,
+  refineLeaf = false,
+  valueContext = null,
+}) {
   let frontier = [{ board: startBoard, cumValue: 0 }];
   let expandedNodeCount = 0;
 
@@ -639,10 +654,39 @@ function runSampleRollout({ startBoard, pairs, profileId, profileConfig, beamWid
     frontier = survivors.slice(0, beamWidth);
   }
 
-  return {
-    value: Math.max(...frontier.map((node) => node.nodeScore)),
-    expandedNodeCount,
-  };
+  const shouldRefine = refineLeaf || (valueContext !== null && valueContext.weight > 0);
+  if (!shouldRefine) {
+    return {
+      value: Math.max(...frontier.map((node) => node.nodeScore)),
+      expandedNodeCount,
+    };
+  }
+
+  const bestNode = frontier.reduce((best, node) =>
+    best === null || node.nodeScore > best.nodeScore ? node : best,
+  null);
+  const fullFeatures = extractBoardFeatures(bestNode.board, {
+    includeVirtualChains: true,
+  });
+  const fullHeuristic = scoreBoardFeatures(fullFeatures, profileId, profileConfig);
+  let refined = bestNode.cumValue + fullHeuristic;
+
+  if (valueContext !== null && valueContext.weight > 0) {
+    const prediction = evaluateValueModel({
+      model: valueContext.model,
+      board: bestNode.board,
+      currentPair: valueContext.currentPair,
+      nextQueue: [],
+      turn: valueContext.turn,
+      totalScore: valueContext.totalScore,
+      features: fullFeatures,
+    });
+    if (prediction) {
+      refined += prediction.objective * valueContext.weight;
+    }
+  }
+
+  return { value: refined, expandedNodeCount };
 }
 
 export function searchBestMove({
@@ -789,12 +833,24 @@ export function searchBestMove({
         for (let i = 0; i < normalizedSettings.sampleDepth; i += 1) {
           pairs.push(remainingKnown[i] ?? sequences[s][i - remainingKnown.length]);
         }
+        const valueContext =
+          normalizedSettings.sampleValueWeight > 0 && valueModel
+            ? {
+                model: valueModel,
+                weight: normalizedSettings.sampleValueWeight,
+                currentPair: pairs[pairs.length - 1],
+                turn: turn + node.bestDepth + normalizedSettings.sampleDepth,
+                totalScore,
+              }
+            : null;
         const rollout = runSampleRollout({
           startBoard: node.board,
           pairs,
           profileId,
           profileConfig,
           beamWidth: normalizedSettings.sampleBeamWidth,
+          refineLeaf: normalizedSettings.sampleRefineLeaf,
+          valueContext,
         });
         sampleValueSum += rollout.value;
         expandedNodeCount += rollout.expandedNodeCount;
@@ -823,6 +879,8 @@ export function searchBestMove({
       sampleBeamWidth: normalizedSettings.sampleBeamWidth,
       sampleTopK: normalizedSettings.sampleTopK,
       sampleWeight: normalizedSettings.sampleWeight,
+      sampleRefineLeaf: normalizedSettings.sampleRefineLeaf,
+      sampleValueWeight: normalizedSettings.sampleValueWeight,
       evaluatedCandidates: topCandidatePairs.length,
     };
   }

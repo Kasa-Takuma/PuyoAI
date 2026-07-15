@@ -10,6 +10,7 @@ import {
 } from "../src/ai/dataset.js";
 import { extractBoardFeatures } from "../src/ai/features.js";
 import { searchBestMove } from "../src/ai/search.js";
+import { encodeValueInput } from "../src/ai/value.js";
 import { boardFromRows } from "../src/core/board.js";
 import { COLORS } from "../src/core/constants.js";
 import { resolveTurn } from "../src/core/engine.js";
@@ -923,4 +924,175 @@ test("rollout survives a near-topout board", () => {
   const result = resolveTurn(board, currentPair, analysis.bestAction);
 
   assert.equal(result.topout, false);
+});
+
+test("sample refine settings are echoed", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const defaultAnalysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24 },
+  });
+
+  assert.equal(defaultAnalysis.settings.sampleRefineLeaf, false);
+  assert.equal(defaultAnalysis.settings.sampleValueWeight, 0);
+
+  const explicitAnalysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: {
+      depth: 1,
+      beamWidth: 24,
+      sampleRefineLeaf: true,
+      sampleValueWeight: 250,
+    },
+  });
+
+  assert.equal(explicitAnalysis.settings.sampleRefineLeaf, true);
+  assert.equal(explicitAnalysis.settings.sampleValueWeight, 250);
+});
+
+test("refined sampled search is deterministic and returns a legal action", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const nextQueue = [{ axis: COLORS.BLUE, child: COLORS.YELLOW }];
+  const settings = {
+    depth: 2,
+    beamWidth: 8,
+    searchProfile: "chain_builder_v13",
+    sampleCount: 2,
+    sampleDepth: 2,
+    sampleBeamWidth: 4,
+    sampleTopK: 3,
+    sampleRefineLeaf: true,
+  };
+
+  const first = searchBestMove({ board, currentPair, nextQueue, settings });
+  const second = searchBestMove({ board, currentPair, nextQueue, settings });
+
+  assert.equal(first.bestActionKey, second.bestActionKey);
+  assert.equal(first.bestScore, second.bestScore);
+  assert.doesNotThrow(() => resolveTurn(board, currentPair, first.bestAction));
+});
+
+test("sample value weight uses the provided value model", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const featureKeys = ["stackCells", "maxHeight"];
+  const featureScales = { stackCells: 78, maxHeight: 13 };
+  const probeModel = { maxNextPairs: 1, featureKeys, featureScales };
+  const probeInput = encodeValueInput({
+    board,
+    currentPair,
+    nextQueue: [],
+    turn: 0,
+    totalScore: 0,
+    features: {},
+    model: probeModel,
+  });
+  const inputDim = probeInput.length;
+  const weights = new Array(inputDim).fill(0);
+  weights[inputDim - 1] = 1;
+  weights[inputDim - 2] = 1;
+  const valueModel = {
+    maxNextPairs: 1,
+    targetNames: ["objective"],
+    featureKeys,
+    featureScales,
+    layers: [
+      {
+        inputDim,
+        outputDim: 1,
+        activation: "linear",
+        weights,
+        bias: [5],
+      },
+    ],
+  };
+
+  const settings = {
+    depth: 1,
+    beamWidth: 24,
+    searchProfile: "chain_builder_v13",
+    sampleCount: 1,
+    sampleDepth: 1,
+    sampleBeamWidth: 4,
+    sampleTopK: 2,
+    sampleSeed: "value-refine-seed",
+  };
+
+  const withWeight = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { ...settings, sampleValueWeight: 1000 },
+    valueModel,
+  });
+  const withoutWeight = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings,
+    valueModel,
+  });
+
+  assert.equal(withWeight.sampling.sampleValueWeight, 1000);
+  assert.equal(withoutWeight.sampling.sampleValueWeight, 0);
+  assert.notEqual(
+    withWeight.candidates[0].sampleScore,
+    withoutWeight.candidates[0].sampleScore,
+  );
 });

@@ -4,13 +4,12 @@ import path from "node:path";
 import { isMainThread, parentPort, Worker } from "node:worker_threads";
 
 import { searchBestMove } from "../src/ai/search.js";
+import { hydrateModel } from "../src/ai/value.js";
 import { applyAction, createGameState } from "../src/app/state.js";
 
 const DEFAULT_OUTPUT_DIR = "log";
 
 const CONFIGS = [
-  { label: "baseline", settings: { dedupe: false, sampleCount: 0 } },
-  { label: "dedupe", settings: { dedupe: true, sampleCount: 0 } },
   {
     label: "sampled",
     settings: {
@@ -23,16 +22,87 @@ const CONFIGS = [
     },
   },
   {
-    label: "sampled_deep",
+    label: "wide_samples",
     settings: {
       dedupe: true,
-      sampleCount: 6,
-      sampleDepth: 6,
+      sampleCount: 8,
+      sampleDepth: 4,
       sampleBeamWidth: 6,
       sampleTopK: 8,
       sampleWeight: 1,
     },
   },
+  {
+    label: "wide_topk",
+    settings: {
+      dedupe: true,
+      sampleCount: 4,
+      sampleDepth: 4,
+      sampleBeamWidth: 6,
+      sampleTopK: 12,
+      sampleWeight: 1,
+    },
+  },
+  {
+    label: "beam48",
+    settings: {
+      dedupe: true,
+      beamWidth: 48,
+      sampleCount: 4,
+      sampleDepth: 4,
+      sampleBeamWidth: 6,
+      sampleTopK: 8,
+      sampleWeight: 1,
+    },
+  },
+  {
+    label: "rollout_beam10",
+    settings: {
+      dedupe: true,
+      sampleCount: 4,
+      sampleDepth: 4,
+      sampleBeamWidth: 10,
+      sampleTopK: 8,
+      sampleWeight: 1,
+    },
+  },
+  {
+    label: "weight_half",
+    settings: {
+      dedupe: true,
+      sampleCount: 4,
+      sampleDepth: 4,
+      sampleBeamWidth: 6,
+      sampleTopK: 8,
+      sampleWeight: 0.5,
+    },
+  },
+  {
+    label: "refine",
+    settings: {
+      dedupe: true,
+      sampleCount: 4,
+      sampleDepth: 4,
+      sampleBeamWidth: 6,
+      sampleTopK: 8,
+      sampleWeight: 1,
+      sampleRefineLeaf: true,
+    },
+  },
+  {
+    label: "refine_value",
+    settings: {
+      dedupe: true,
+      sampleCount: 4,
+      sampleDepth: 4,
+      sampleBeamWidth: 6,
+      sampleTopK: 8,
+      sampleWeight: 1,
+      sampleRefineLeaf: true,
+      sampleValueWeight: 80000,
+    },
+  },
+  { label: "baseline", settings: { dedupe: true, sampleCount: 0 } },
 ];
 
 function parseIntArg(text, fallback) {
@@ -52,6 +122,7 @@ function parseArgs(argv) {
     configLabels: null,
     parallel: 4,
     output: null,
+    valueModelPath: null,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -90,6 +161,9 @@ function parseArgs(argv) {
     } else if (arg === "--out") {
       args.output = next || args.output;
       index += 1;
+    } else if (arg === "--value-model") {
+      args.valueModelPath = next || args.valueModelPath;
+      index += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -113,7 +187,9 @@ Options:
   --visible-nexts N   Next queue length passed to the search. Default: 2
   --configs a,b,c     Comma separated config labels to run. Default: all
   --parallel N        Worker count. Default: 4
-  --out PATH          JSON report path. Default: log/puyoai-search-compare-<iso>.json`);
+  --out PATH          JSON report path. Default: log/puyoai-search-compare-<iso>.json
+  --value-model PATH  Value model web export JSON, loaded once per worker and
+                       passed to searchBestMove. Default: none`);
 }
 
 function filterConfigs(labels) {
@@ -222,6 +298,21 @@ function summarizeRun(config, stats) {
   };
 }
 
+let cachedValueModel = null;
+let cachedValueModelPath = null;
+
+function loadValueModel(valueModelPath) {
+  if (!valueModelPath) {
+    return null;
+  }
+  if (cachedValueModelPath !== valueModelPath) {
+    const raw = fs.readFileSync(valueModelPath, "utf8");
+    cachedValueModel = hydrateModel(JSON.parse(raw));
+    cachedValueModelPath = valueModelPath;
+  }
+  return cachedValueModel;
+}
+
 function runConfig(config, job) {
   const stats = createEmptyStats();
   const startedAt = performance.now();
@@ -232,6 +323,7 @@ function runConfig(config, job) {
     searchProfile: job.profile,
     ...config.settings,
   };
+  const valueModel = loadValueModel(job.valueModelPath);
 
   for (
     let game = 0;
@@ -254,6 +346,7 @@ function runConfig(config, job) {
         nextQueue: state.nextQueue.slice(0, job.visibleNexts),
         settings: aiSettings,
         turn: state.turn,
+        valueModel,
       });
       const result = applyAction(state, analysis.bestAction, "compare");
       if (!result) {
@@ -376,6 +469,7 @@ async function runMain() {
     beamWidth: args.beamWidth,
     profile: args.profile,
     visibleNexts: args.visibleNexts,
+    valueModelPath: args.valueModelPath,
   };
   const outputPath = args.output ?? defaultOutputPath();
 
@@ -407,6 +501,7 @@ async function runMain() {
       profile: args.profile,
       visibleNexts: args.visibleNexts,
       parallel: args.parallel,
+      valueModelPath: args.valueModelPath,
     },
     seeds,
     results,
