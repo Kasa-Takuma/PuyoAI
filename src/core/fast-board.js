@@ -14,7 +14,6 @@ import {
   STORAGE_HEIGHT,
   TOP_OUT_COLUMN,
   TOP_OUT_ROW,
-  VISIBLE_HEIGHT,
 } from "./constants.js";
 
 const CELL_COUNT = BOARD_WIDTH * BOARD_HEIGHT;
@@ -301,122 +300,233 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-// Reused scratch buffers for the flood-fill group detection. Cleared with
-// fill(0) at the start of every scan for correctness (a generation-counter
-// scheme would need to handle Uint8Array wraparound, which is not worth the
-// risk here).
-const visitedBuf = new Uint8Array(CELL_COUNT);
-const stackBuf = new Int16Array(CELL_COUNT);
-const garbageFlags = new Uint8Array(CELL_COUNT);
+// --- Bitboard group detection ------------------------------------------
+//
+// The 6x14 board is packed into 3 words (BB_WORDS). Word `w` holds columns
+// `2*w` ("lane A", bits 0-15) and `2*w+1` ("lane B", bits 16-31); within a
+// lane, bit `y` is row y. Only bits 0-13 of each lane are ever populated
+// (BOARD_HEIGHT = 14); bits 14-15 stay 0 so a vertical shift can't silently
+// smear into the next row. Vertical (y) shifts operate within a lane and
+// leak one bit across the lane boundary, which must be masked off: shifting
+// up (`<< 1`) pushes lane A's bit 15 into lane B's bit 0 (word bit 16), and
+// shifting down (`>>> 1`) pushes lane B's bit 16 into lane A's bit 15.
+// Horizontal (x) shifts move whole 16-bit lanes between/within words and
+// never leak, since lanes are already word-aligned.
+const BB_WORDS = 3;
+const LANE_BITS = 16;
+const UP_LEAK_MASK = 0xfffeffff; // clears bit16 (lane A bit15 -> lane B bit0 leak)
+const DOWN_LEAK_MASK = 0xffff7fff; // clears bit15 (lane B bit16 -> lane A bit15 leak)
+const VISIBLE_MASK = 0x0fff0fff; // bits 0-11 of each lane (VISIBLE_HEIGHT = 12)
+const BOARD_MASK = 0x3fff3fff; // bits 0-13 of each lane (BOARD_HEIGHT = 14)
 
-function isClearableColor(color) {
-  return color !== FAST_COLORS.EMPTY && color !== FAST_COLORS.GARBAGE;
+// bbUp/bbDown/bbLeft/bbRight are the single-direction building blocks of
+// bbDilate below, kept as standalone functions (rather than inlined
+// everywhere) so tests/fast-board.test.js can exercise each shift direction
+// against known bit patterns in isolation.
+export function bbUp(out, w) {
+  for (let i = 0; i < BB_WORDS; i += 1) {
+    out[i] = (w[i] << 1) & UP_LEAK_MASK;
+  }
 }
 
-function findMatchedGroups(working) {
-  visitedBuf.fill(0);
-  const groups = [];
+export function bbDown(out, w) {
+  for (let i = 0; i < BB_WORDS; i += 1) {
+    out[i] = (w[i] >>> 1) & DOWN_LEAK_MASK;
+  }
+}
+
+export function bbRight(out, w) {
+  const w0 = w[0];
+  const w1 = w[1];
+  const w2 = w[2];
+  out[2] = (w2 << 16) | (w1 >>> 16);
+  out[1] = (w1 << 16) | (w0 >>> 16);
+  out[0] = w0 << 16;
+}
+
+export function bbLeft(out, w) {
+  const w0 = w[0];
+  const w1 = w[1];
+  const w2 = w[2];
+  out[0] = (w0 >>> 16) | (w1 << 16);
+  out[1] = (w1 >>> 16) | (w2 << 16);
+  out[2] = w2 >>> 16;
+}
+
+// dilate(mask) = mask | up(mask) | down(mask) | left(mask) | right(mask).
+// Callers are responsible for masking the result to the region they care
+// about (visible rows for group growth, full board for garbage adjacency).
+// This is the innermost loop of group extraction, so the four directional
+// shifts are computed inline (matching bbUp/bbDown/bbLeft/bbRight exactly)
+// instead of calling those helpers through scratch buffers, to avoid extra
+// typed-array round-trips per iteration.
+function bbDilate(out, w) {
+  const w0 = w[0];
+  const w1 = w[1];
+  const w2 = w[2];
+
+  const merged0 =
+    w0 |
+    ((w0 << 1) & UP_LEAK_MASK) |
+    ((w0 >>> 1) & DOWN_LEAK_MASK) |
+    (w0 << 16) |
+    ((w0 >>> 16) | (w1 << 16));
+  const merged1 =
+    w1 |
+    ((w1 << 1) & UP_LEAK_MASK) |
+    ((w1 >>> 1) & DOWN_LEAK_MASK) |
+    ((w1 << 16) | (w0 >>> 16)) |
+    ((w1 >>> 16) | (w2 << 16));
+  const merged2 =
+    w2 |
+    ((w2 << 1) & UP_LEAK_MASK) |
+    ((w2 >>> 1) & DOWN_LEAK_MASK) |
+    ((w2 << 16) | (w1 >>> 16)) |
+    (w2 >>> 16);
+
+  out[0] = merged0;
+  out[1] = merged1;
+  out[2] = merged2;
+}
+
+function popcount32(value) {
+  let v = value >>> 0;
+  v = v - ((v >>> 1) & 0x55555555);
+  v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+  v = (v + (v >>> 4)) & 0x0f0f0f0f;
+  return (v * 0x01010101) >>> 24;
+}
+
+function bbPopcount(bits) {
+  return popcount32(bits[0]) + popcount32(bits[1]) + popcount32(bits[2]);
+}
+
+function bbEquals(a, b) {
+  return a[0] === b[0] >>> 0 && a[1] === b[1] >>> 0 && a[2] === b[2] >>> 0;
+}
+
+function bbIsEmpty(bits) {
+  return bits[0] === 0 && bits[1] === 0 && bits[2] === 0;
+}
+
+// Sets every cell of `working` covered by a set bit of `bits` to EMPTY
+// (word-major bit scan). Both erase sites in resolveFastBoard need exactly
+// this operation, so it is inlined here rather than exposed as a generic
+// callback-based iterator (avoids a closure allocation per chain step on
+// the search hot path).
+function clearMaskCells(working, bits) {
+  for (let wi = 0; wi < BB_WORDS; wi += 1) {
+    let word = bits[wi] >>> 0;
+    while (word !== 0) {
+      const lowestBit = word & -word;
+      const bitIndex = 31 - Math.clz32(lowestBit);
+      const lane = bitIndex >= LANE_BITS ? 1 : 0;
+      const y = bitIndex - lane * LANE_BITS;
+      const x = wi * 2 + lane;
+      working[x * BOARD_HEIGHT + y] = FAST_COLORS.EMPTY;
+      word ^= lowestBit;
+    }
+  }
+}
+
+// COLOR_MASKS[color] holds the bitboard for that FAST_COLORS code (indices
+// 0..5, i.e. EMPTY through GARBAGE), rebuilt from scratch on every call to
+// findMatchedGroups.
+const COLOR_MASKS = [
+  new Uint32Array(BB_WORDS),
+  new Uint32Array(BB_WORDS),
+  new Uint32Array(BB_WORDS),
+  new Uint32Array(BB_WORDS),
+  new Uint32Array(BB_WORDS),
+  new Uint32Array(BB_WORDS),
+];
+
+function buildColorMasks(fastBoard) {
+  for (let c = 0; c < COLOR_MASKS.length; c += 1) {
+    COLOR_MASKS[c][0] = 0;
+    COLOR_MASKS[c][1] = 0;
+    COLOR_MASKS[c][2] = 0;
+  }
 
   for (let x = 0; x < BOARD_WIDTH; x += 1) {
     const base = x * BOARD_HEIGHT;
-    for (let y = 0; y < VISIBLE_HEIGHT; y += 1) {
-      const index = base + y;
-      const color = working[index];
-      if (!isClearableColor(color) || visitedBuf[index]) {
-        continue;
-      }
-
-      let stackSize = 0;
-      stackBuf[stackSize] = index;
-      stackSize += 1;
-      visitedBuf[index] = 1;
-      const cells = [index];
-
-      while (stackSize > 0) {
-        stackSize -= 1;
-        const current = stackBuf[stackSize];
-        const cx = (current / BOARD_HEIGHT) | 0;
-        const cy = current % BOARD_HEIGHT;
-
-        if (cx + 1 < BOARD_WIDTH) {
-          const neighbor = current + BOARD_HEIGHT;
-          if (!visitedBuf[neighbor] && working[neighbor] === color) {
-            visitedBuf[neighbor] = 1;
-            stackBuf[stackSize] = neighbor;
-            stackSize += 1;
-            cells.push(neighbor);
-          }
-        }
-        if (cx - 1 >= 0) {
-          const neighbor = current - BOARD_HEIGHT;
-          if (!visitedBuf[neighbor] && working[neighbor] === color) {
-            visitedBuf[neighbor] = 1;
-            stackBuf[stackSize] = neighbor;
-            stackSize += 1;
-            cells.push(neighbor);
-          }
-        }
-        if (cy + 1 < VISIBLE_HEIGHT) {
-          const neighbor = current + 1;
-          if (!visitedBuf[neighbor] && working[neighbor] === color) {
-            visitedBuf[neighbor] = 1;
-            stackBuf[stackSize] = neighbor;
-            stackSize += 1;
-            cells.push(neighbor);
-          }
-        }
-        if (cy - 1 >= 0) {
-          const neighbor = current - 1;
-          if (!visitedBuf[neighbor] && working[neighbor] === color) {
-            visitedBuf[neighbor] = 1;
-            stackBuf[stackSize] = neighbor;
-            stackSize += 1;
-            cells.push(neighbor);
-          }
-        }
-      }
-
-      if (cells.length >= 4) {
-        groups.push({ color, cells });
-      }
-    }
-  }
-
-  return groups;
-}
-
-// Boundary is the full board (BOARD_HEIGHT rows), matching engine.js's
-// clearAdjacentGarbage which relies on isInsideBoard rather than
-// VISIBLE_HEIGHT, so garbage sitting in the hidden rows can also be cleared.
-function markAdjacentGarbage(working, index) {
-  const x = (index / BOARD_HEIGHT) | 0;
-  const y = index % BOARD_HEIGHT;
-
-  if (x + 1 < BOARD_WIDTH) {
-    const neighbor = index + BOARD_HEIGHT;
-    if (working[neighbor] === FAST_COLORS.GARBAGE) {
-      garbageFlags[neighbor] = 1;
-    }
-  }
-  if (x - 1 >= 0) {
-    const neighbor = index - BOARD_HEIGHT;
-    if (working[neighbor] === FAST_COLORS.GARBAGE) {
-      garbageFlags[neighbor] = 1;
-    }
-  }
-  if (y + 1 < BOARD_HEIGHT) {
-    const neighbor = index + 1;
-    if (working[neighbor] === FAST_COLORS.GARBAGE) {
-      garbageFlags[neighbor] = 1;
-    }
-  }
-  if (y - 1 >= 0) {
-    const neighbor = index - 1;
-    if (working[neighbor] === FAST_COLORS.GARBAGE) {
-      garbageFlags[neighbor] = 1;
+    const word = x >> 1;
+    const laneShift = (x & 1) * LANE_BITS;
+    for (let y = 0; y < BOARD_HEIGHT; y += 1) {
+      const color = fastBoard[base + y];
+      COLOR_MASKS[color][word] |= 1 << (laneShift + y);
     }
   }
 }
+
+const colorVisibleBuf = new Uint32Array(BB_WORDS);
+const residualBuf = new Uint32Array(BB_WORDS);
+const seedBuf = new Uint32Array(BB_WORDS);
+const compBuf = new Uint32Array(BB_WORDS);
+const nextBuf = new Uint32Array(BB_WORDS);
+const eraseMaskBuf = new Uint32Array(BB_WORDS);
+
+function findMatchedGroups(working) {
+  buildColorMasks(working);
+  eraseMaskBuf[0] = 0;
+  eraseMaskBuf[1] = 0;
+  eraseMaskBuf[2] = 0;
+  const groups = [];
+
+  for (let color = FAST_COLORS.RED; color <= FAST_COLORS.YELLOW; color += 1) {
+    const colorMask = COLOR_MASKS[color];
+    colorVisibleBuf[0] = colorMask[0] & VISIBLE_MASK;
+    colorVisibleBuf[1] = colorMask[1] & VISIBLE_MASK;
+    colorVisibleBuf[2] = colorMask[2] & VISIBLE_MASK;
+    residualBuf[0] = colorVisibleBuf[0];
+    residualBuf[1] = colorVisibleBuf[1];
+    residualBuf[2] = colorVisibleBuf[2];
+
+    while (!bbIsEmpty(residualBuf)) {
+      let seedWord = 0;
+      while (residualBuf[seedWord] === 0) {
+        seedWord += 1;
+      }
+      seedBuf[0] = 0;
+      seedBuf[1] = 0;
+      seedBuf[2] = 0;
+      const w = residualBuf[seedWord];
+      seedBuf[seedWord] = w & -w;
+
+      compBuf[0] = seedBuf[0];
+      compBuf[1] = seedBuf[1];
+      compBuf[2] = seedBuf[2];
+      for (;;) {
+        bbDilate(nextBuf, compBuf);
+        nextBuf[0] &= colorVisibleBuf[0];
+        nextBuf[1] &= colorVisibleBuf[1];
+        nextBuf[2] &= colorVisibleBuf[2];
+        if (bbEquals(nextBuf, compBuf)) {
+          break;
+        }
+        compBuf[0] = nextBuf[0];
+        compBuf[1] = nextBuf[1];
+        compBuf[2] = nextBuf[2];
+      }
+
+      const size = bbPopcount(compBuf);
+      if (size >= 4) {
+        eraseMaskBuf[0] |= compBuf[0];
+        eraseMaskBuf[1] |= compBuf[1];
+        eraseMaskBuf[2] |= compBuf[2];
+        groups.push({ color, size });
+      }
+
+      residualBuf[0] &= ~compBuf[0];
+      residualBuf[1] &= ~compBuf[1];
+      residualBuf[2] &= ~compBuf[2];
+    }
+  }
+
+  return { groups, eraseMask: eraseMaskBuf };
+}
+
+const garbageAdjacentBuf = new Uint32Array(BB_WORDS);
 
 function applyFastGravity(working) {
   for (let x = 0; x < BOARD_WIDTH; x += 1) {
@@ -454,20 +564,19 @@ function resolveFastBoard(working) {
   let totalScore = 0;
 
   while (true) {
-    const matchedGroups = findMatchedGroups(working);
-    if (matchedGroups.length === 0) {
+    const { groups, eraseMask } = findMatchedGroups(working);
+    if (groups.length === 0) {
       break;
     }
 
     chain += 1;
     const colorSet = new Set();
-    let erasedCount = 0;
     let groupBonusSum = 0;
-    for (const group of matchedGroups) {
+    for (const group of groups) {
       colorSet.add(group.color);
-      erasedCount += group.cells.length;
-      groupBonusSum += groupBonusFor(group.cells.length);
+      groupBonusSum += groupBonusFor(group.size);
     }
+    const erasedCount = bbPopcount(eraseMask);
 
     const multiplier = clamp(
       chainBonusFor(chain) + colorBonusFor(colorSet.size) + groupBonusSum,
@@ -476,23 +585,17 @@ function resolveFastBoard(working) {
     );
     totalScore += 10 * erasedCount * multiplier;
 
-    for (const group of matchedGroups) {
-      for (const index of group.cells) {
-        working[index] = FAST_COLORS.EMPTY;
-      }
-    }
+    clearMaskCells(working, eraseMask);
 
-    garbageFlags.fill(0);
-    for (const group of matchedGroups) {
-      for (const index of group.cells) {
-        markAdjacentGarbage(working, index);
-      }
-    }
-    for (let index = 0; index < CELL_COUNT; index += 1) {
-      if (garbageFlags[index]) {
-        working[index] = FAST_COLORS.EMPTY;
-      }
-    }
+    // Garbage sitting adjacent to (or in the hidden rows above) an erased
+    // cell is also cleared. Boundary is the full board (BOARD_MASK), not
+    // just the visible rows, matching engine.js's clearAdjacentGarbage which
+    // relies on isInsideBoard rather than VISIBLE_HEIGHT.
+    bbDilate(garbageAdjacentBuf, eraseMask);
+    garbageAdjacentBuf[0] &= BOARD_MASK & COLOR_MASKS[FAST_COLORS.GARBAGE][0];
+    garbageAdjacentBuf[1] &= BOARD_MASK & COLOR_MASKS[FAST_COLORS.GARBAGE][1];
+    garbageAdjacentBuf[2] &= BOARD_MASK & COLOR_MASKS[FAST_COLORS.GARBAGE][2];
+    clearMaskCells(working, garbageAdjacentBuf);
 
     applyFastGravity(working);
   }

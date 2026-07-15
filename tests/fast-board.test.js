@@ -2,6 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  bbDown,
+  bbLeft,
+  bbRight,
+  bbUp,
   colorToCode,
   codeToColor,
   fastBoardHash,
@@ -208,6 +212,110 @@ test("fastResolveTurn matches resolveTurn across many boards/pairs/actions", () 
     chainedCaseCount >= 200,
     `expected at least 200 chained cases, got ${chainedCaseCount}`,
   );
+});
+
+test("fastResolveTurn matches resolveTurn on 500 random boards (bitboard group detection)", () => {
+  const rng = createRng("fast-board-resolve-bitboard-500");
+  const boards = generateBoardSet(rng, 500);
+
+  let caseCount = 0;
+  let chainedCaseCount = 0;
+
+  for (const board of boards) {
+    const fastBoard = fromLegacyBoard(board);
+
+    for (let pairIndex = 0; pairIndex < 3; pairIndex += 1) {
+      const pair = randomPair(rng, PLAYABLE_COLORS);
+      const codes = pairToCodes(pair);
+      const legacyActions = enumerateLegalActions(board, pair);
+
+      for (const action of legacyActions) {
+        const legacyResult = resolveTurn(board, pair, action);
+        const fastResult = fastResolveTurn(fastBoard, codes.axis, codes.child, action);
+
+        caseCount += 1;
+        if (legacyResult.totalChains > 0) {
+          chainedCaseCount += 1;
+        }
+
+        assert.equal(fastResult.topout, legacyResult.topout, `topout mismatch for ${JSON.stringify(action)}`);
+        assert.equal(
+          fastResult.totalChains,
+          legacyResult.totalChains,
+          `totalChains mismatch for ${JSON.stringify(action)}`,
+        );
+        assert.equal(
+          fastResult.totalScore,
+          legacyResult.totalScore,
+          `totalScore mismatch for ${JSON.stringify(action)}`,
+        );
+        assert.equal(
+          fastResult.allClear,
+          legacyResult.allClear,
+          `allClear mismatch for ${JSON.stringify(action)}`,
+        );
+        assert.deepEqual(
+          toLegacyBoard(fastResult.board),
+          legacyResult.finalBoard,
+          `final board mismatch for ${JSON.stringify(action)}`,
+        );
+      }
+    }
+  }
+
+  assert.ok(caseCount >= 5000, `expected at least 5000 cases, got ${caseCount}`);
+  assert.ok(
+    chainedCaseCount >= 100,
+    `expected at least 100 chained cases, got ${chainedCaseCount}`,
+  );
+});
+
+test("bbUp/bbDown/bbLeft/bbRight shift bits without leaking across lane/word boundaries", () => {
+  const out = new Uint32Array(3);
+
+  // up: (x=0, y=0) -> (x=0, y=1), a plain in-lane shift.
+  bbUp(out, Uint32Array.from([1, 0, 0]));
+  assert.deepEqual(Array.from(out), [2, 0, 0]);
+
+  // up: a bit at lane A's row 15 (the leak boundary) must vanish rather than
+  // bleed into lane B's row 0 (word bit 16).
+  bbUp(out, Uint32Array.from([1 << 15, 0, 0]));
+  assert.deepEqual(Array.from(out), [0, 0, 0]);
+
+  // down: (x=0, y=1) -> (x=0, y=0), a plain in-lane shift.
+  bbDown(out, Uint32Array.from([2, 0, 0]));
+  assert.deepEqual(Array.from(out), [1, 0, 0]);
+
+  // down: a bit at lane B's row 0 (word bit 16) must vanish rather than
+  // bleed into lane A's row 15 (word bit 15).
+  bbDown(out, Uint32Array.from([1 << 16, 0, 0]));
+  assert.deepEqual(Array.from(out), [0, 0, 0]);
+
+  // right: column 0 -> column 1 stays within word 0 (lane A -> lane B).
+  bbRight(out, Uint32Array.from([1, 0, 0]));
+  assert.deepEqual(Array.from(out), [1 << 16, 0, 0]);
+
+  // right: column 1 -> column 2 crosses the word 0 / word 1 boundary
+  // (lane B of word 0 -> lane A of word 1).
+  bbRight(out, Uint32Array.from([1 << 16, 0, 0]));
+  assert.deepEqual(Array.from(out), [0, 1, 0]);
+
+  // right: column 5 (word 2, lane B) has no column 6 to shift into.
+  bbRight(out, Uint32Array.from([0, 0, 1 << 16]));
+  assert.deepEqual(Array.from(out), [0, 0, 0]);
+
+  // left: column 1 -> column 0 stays within word 0 (lane B -> lane A).
+  bbLeft(out, Uint32Array.from([1 << 16, 0, 0]));
+  assert.deepEqual(Array.from(out), [1, 0, 0]);
+
+  // left: column 2 -> column 1 crosses the word 0 / word 1 boundary
+  // (lane A of word 1 -> lane B of word 0).
+  bbLeft(out, Uint32Array.from([0, 1, 0]));
+  assert.deepEqual(Array.from(out), [1 << 16, 0, 0]);
+
+  // left: column 0 (word 0, lane A) has no column -1 to shift into.
+  bbLeft(out, Uint32Array.from([1, 0, 0]));
+  assert.deepEqual(Array.from(out), [0, 0, 0]);
 });
 
 test("known chain scenarios match exactly (reused from core.test.js)", () => {
