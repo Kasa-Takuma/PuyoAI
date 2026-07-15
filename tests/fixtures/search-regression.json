@@ -1,0 +1,802 @@
+{
+  "kind": "search_regression_fixture",
+  "createdAt": "2026-07-15T10:42:00.675Z",
+  "sourceCommit": "439e39a",
+  "cases": [
+    {
+      "label": "plain",
+      "seed": "fixture:plain",
+      "settings": {
+        "depth": 3,
+        "beamWidth": 24,
+        "searchProfile": "chain_builder_v13"
+      },
+      "totalScore": 85920,
+      "turns": [
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 2574.636,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 2912.969,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:2",
+          "bestScore": 12494.723,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:4",
+          "bestScore": 12827.461,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:4",
+          "bestScore": 33975.632,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:4",
+          "bestScore": 34288.069,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 35276.337,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 35980.531,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:4",
+          "bestScore": 75972.523,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 143478.441,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 145300.398,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 146051.304,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 387236.617,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 391127.317,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:1",
+          "bestScore": 394512.678,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 395988.883,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 392765.798,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 369041.779,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 364103.263,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 513697.236,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 295794.947,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:2",
+          "bestScore": 271011.583,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 294010.383,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:4",
+          "bestScore": 810644.221,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 570125.978,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 1178380.054,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 1187757.256,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 12472.299,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 33139.847,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:3",
+          "bestScore": 34936.968,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 35216.005,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 75261.711,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:3",
+          "bestScore": 141415.784,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:2",
+          "bestScore": 142630.891,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 146770.255,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 146723.173,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 146392.145,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:2",
+          "bestScore": 241423.774,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:4",
+          "bestScore": 254408.252,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:5",
+          "bestScore": 395131.502,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:4",
+          "bestScore": 580688.113,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 364204.906,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 579418.825,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 341598.906,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 539202.862,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:4",
+          "bestScore": 804842.646,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 798034.016,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 1126418.344,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 1183601.49,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 1184095.163,
+          "candidateCount": 22
+        }
+      ]
+    },
+    {
+      "label": "sampled",
+      "seed": "fixture:sampled",
+      "settings": {
+        "depth": 3,
+        "beamWidth": 16,
+        "searchProfile": "chain_builder_v13",
+        "sampleCount": 2,
+        "sampleDepth": 3,
+        "sampleBeamWidth": 4,
+        "sampleTopK": 4
+      },
+      "totalScore": 22430,
+      "turns": [
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 1331.5,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 4461.969,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 13740.598,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:5",
+          "bestScore": 14478.889,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 35708.709,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:5",
+          "bestScore": 77232.193,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:3",
+          "bestScore": 77950.197,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:2",
+          "bestScore": 145974.334,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 145945.855,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 146000.855,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:1",
+          "bestScore": 146540.172,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 146505.554,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:1",
+          "bestScore": 146824.966,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:4",
+          "bestScore": 147078.933,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 244761.537,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:1",
+          "bestScore": 388252.076,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 444660.718,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 364233.505,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 972206.997,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 703095.596,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:1",
+          "bestScore": 691933.658,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:1",
+          "bestScore": 653570.58,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 528122.999,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 793989.313,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 334092.17,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 281118.818,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 220986.33,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 4121.989,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "LEFT:1",
+          "bestScore": 94888.628,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": -84051.055,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:2",
+          "bestScore": 424172.405,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 372658.936,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 141357.407,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 197604.823,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 238606.558,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:2",
+          "bestScore": 77676.207,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 78857.768,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:4",
+          "bestScore": 79178.374,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 145638.593,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 147452.332,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 147900.985,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 411000.038,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:2",
+          "bestScore": 404676.96,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 400540.52,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 331613.294,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 516183.227,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 522134.577,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 415909.125,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 488415.695,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:5",
+          "bestScore": 487438.208,
+          "candidateCount": 22
+        }
+      ]
+    },
+    {
+      "label": "refine",
+      "seed": "fixture:refine",
+      "settings": {
+        "depth": 2,
+        "beamWidth": 12,
+        "searchProfile": "chain_builder_v12",
+        "sampleCount": 2,
+        "sampleDepth": 2,
+        "sampleBeamWidth": 4,
+        "sampleTopK": 3,
+        "sampleRefineLeaf": true
+      },
+      "totalScore": 51480,
+      "turns": [
+        {
+          "bestActionKey": "RIGHT:2",
+          "bestScore": 2925.02,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:1",
+          "bestScore": 13819.589,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 14759.355,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 14558.342,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:4",
+          "bestScore": 24206.012,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:1",
+          "bestScore": 63091.316,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 100118.967,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:2",
+          "bestScore": 134881.71,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 139646.594,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 190579.521,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 226940.366,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:1",
+          "bestScore": 357678.824,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 450987.56,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:3",
+          "bestScore": 454046.86,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "LEFT:1",
+          "bestScore": 454464.959,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 230947.423,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "RIGHT:4",
+          "bestScore": 471374.292,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 471330.742,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 471790.898,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 238763.983,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 516104.396,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 497062.093,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:4",
+          "bestScore": 566207.815,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 678631.544,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 873451.466,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 447593.898,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:1",
+          "bestScore": 14802.203,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:0",
+          "bestScore": 33208.25,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 43387.191,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 52857.278,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:2",
+          "bestScore": 62898.046,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:2",
+          "bestScore": 80603.711,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:2",
+          "bestScore": 119173.367,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:4",
+          "bestScore": 119211.895,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 144514.064,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 116862.265,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 198715.028,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "LEFT:3",
+          "bestScore": 509429.104,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:5",
+          "bestScore": 598024.23,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 699343.911,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "LEFT:2",
+          "bestScore": 584829.642,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:4",
+          "bestScore": 608609.239,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "DOWN:3",
+          "bestScore": 991926.71,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:0",
+          "bestScore": 798101.792,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 731084.815,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "RIGHT:4",
+          "bestScore": 1508699.222,
+          "candidateCount": 11
+        },
+        {
+          "bestActionKey": "DOWN:0",
+          "bestScore": 904435.999,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:1",
+          "bestScore": 486469.608,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:5",
+          "bestScore": 71406.719,
+          "candidateCount": 22
+        },
+        {
+          "bestActionKey": "UP:2",
+          "bestScore": 66194.624,
+          "candidateCount": 11
+        }
+      ]
+    }
+  ]
+}

@@ -1,11 +1,15 @@
-import { boardToRows, encodeAction, enumerateLegalActions } from "../core/board.js";
-import { resolveTurn } from "../core/engine.js";
-import { createRng, nextPair } from "../core/randomizer.js";
+import { boardToRows, encodeAction } from "../core/board.js";
 import {
-  extractBoardFeatures,
-  featuresToVector,
-  scoreBoardFeatures,
-} from "./features.js";
+  fastBoardKey,
+  fastEnumerateLegalActions,
+  fastResolveTurn,
+  fromLegacyBoard,
+  pairToCodes,
+  toLegacyBoard,
+} from "../core/fast-board.js";
+import { createRng, nextPair } from "../core/randomizer.js";
+import { extractBoardFeaturesFast } from "./features-fast.js";
+import { featuresToVector, scoreBoardFeatures } from "./features.js";
 import { evaluateValueModel, normalizeValueAssistSettings } from "./value.js";
 import {
   DEFAULT_SEARCH_PROFILE_ID,
@@ -127,10 +131,6 @@ function cloneAction(action) {
     column: action.column,
     orientation: action.orientation,
   };
-}
-
-function boardKey(board) {
-  return boardToRows(board).join("");
 }
 
 function rememberCandidateNode(candidatePools, node, maxPerRoot = 3) {
@@ -477,9 +477,17 @@ function scoreTurnResult(
   );
 }
 
-function createExpandedNode(node, pair, action, layerIndex, profileId, profileConfig) {
-  const result = resolveTurn(node.board, pair, action);
-  const features = extractBoardFeatures(result.finalBoard, {
+function createExpandedNode(
+  node,
+  axisCode,
+  childCode,
+  action,
+  layerIndex,
+  profileId,
+  profileConfig,
+) {
+  const result = fastResolveTurn(node.board, axisCode, childCode, action);
+  const features = extractBoardFeaturesFast(result.board, {
     includeVirtualChains: false,
   });
   const heuristicScore = scoreBoardFeatures(features, profileId, profileConfig);
@@ -487,7 +495,7 @@ function createExpandedNode(node, pair, action, layerIndex, profileId, profileCo
     (profileConfig?.baseProfileId ?? profileId) === "chain_builder_v10" &&
     result.totalChains >= 7 &&
     result.totalChains <= 9
-      ? extractBoardFeatures(node.board, { includeVirtualChains: true })
+      ? extractBoardFeaturesFast(node.board, { includeVirtualChains: true })
       : null;
   const turnValue = scoreTurnResult(
     result,
@@ -509,7 +517,7 @@ function createExpandedNode(node, pair, action, layerIndex, profileId, profileCo
   };
 
   return {
-    board: result.finalBoard,
+    board: result.board,
     profileId,
     profileConfig,
     rootAction,
@@ -542,7 +550,7 @@ function createLeafState({ node, currentPair, nextQueue, turn, totalScore }) {
 }
 
 function createCandidate(node, rootContext) {
-  const refinedFeatures = extractBoardFeatures(node.board, {
+  const refinedFeatures = extractBoardFeaturesFast(node.board, {
     includeVirtualChains: true,
   });
   const heuristicScore = scoreBoardFeatures(
@@ -560,6 +568,7 @@ function createCandidate(node, rootContext) {
           turn: rootContext.turn,
           totalScore: rootContext.totalScore,
         }),
+        board: toLegacyBoard(node.board),
         features: refinedFeatures,
       })
     : null;
@@ -605,15 +614,16 @@ function runSampleRollout({
 }) {
   let frontier = [{ board: startBoard, cumValue: 0 }];
   let expandedNodeCount = 0;
+  const pairCodes = pairs.map(pairToCodes);
 
-  for (const pair of pairs) {
+  for (const { axis: axisCode, child: childCode } of pairCodes) {
     const expanded = [];
     const topoutValues = [];
 
     for (const node of frontier) {
-      const actions = enumerateLegalActions(node.board, pair);
+      const actions = fastEnumerateLegalActions(node.board, axisCode, childCode);
       for (const action of actions) {
-        const result = resolveTurn(node.board, pair, action);
+        const result = fastResolveTurn(node.board, axisCode, childCode, action);
         expandedNodeCount += 1;
         const turnValue = scoreTurnResult(result, profileId, {}, profileConfig);
 
@@ -624,12 +634,12 @@ function runSampleRollout({
 
         const cumValue = node.cumValue + turnValue;
         const cheap = scoreBoardFeatures(
-          extractBoardFeatures(result.finalBoard, { includeVirtualChains: false }),
+          extractBoardFeaturesFast(result.board, { includeVirtualChains: false }),
           profileId,
           profileConfig,
         );
         expanded.push({
-          board: result.finalBoard,
+          board: result.board,
           cumValue,
           nodeScore: cumValue + cheap,
         });
@@ -642,7 +652,7 @@ function runSampleRollout({
 
     const bestByKey = new Map();
     for (const child of expanded) {
-      const key = boardKey(child.board);
+      const key = fastBoardKey(child.board);
       const existing = bestByKey.get(key);
       if (!existing || child.nodeScore > existing.nodeScore) {
         bestByKey.set(key, child);
@@ -665,7 +675,7 @@ function runSampleRollout({
   const bestNode = frontier.reduce((best, node) =>
     best === null || node.nodeScore > best.nodeScore ? node : best,
   null);
-  const fullFeatures = extractBoardFeatures(bestNode.board, {
+  const fullFeatures = extractBoardFeaturesFast(bestNode.board, {
     includeVirtualChains: true,
   });
   const fullHeuristic = scoreBoardFeatures(fullFeatures, profileId, profileConfig);
@@ -674,7 +684,7 @@ function runSampleRollout({
   if (valueContext !== null && valueContext.weight > 0) {
     const prediction = evaluateValueModel({
       model: valueContext.model,
-      board: bestNode.board,
+      board: toLegacyBoard(bestNode.board),
       currentPair: valueContext.currentPair,
       nextQueue: [],
       turn: valueContext.turn,
@@ -704,13 +714,19 @@ export function searchBestMove({
   const profileConfig = normalizedSettings.profileConfig;
   const activeValueModel = normalizedSettings.useValueModel ? valueModel : null;
   const candidatePools = new Map();
-  const rootActions = enumerateLegalActions(board, currentPair);
+  const fastRoot = fromLegacyBoard(board);
+  const rootPairCodes = pairToCodes(currentPair);
+  const rootActions = fastEnumerateLegalActions(
+    fastRoot,
+    rootPairCodes.axis,
+    rootPairCodes.child,
+  );
 
   let expandedNodeCount = 0;
   let frontier = rootActions.map((action) => {
     const node = createExpandedNode(
       {
-        board,
+        board: fastRoot,
         profileId,
         profileConfig,
         rootAction: null,
@@ -721,7 +737,8 @@ export function searchBestMove({
         projectedScore: 0,
         expandedNodes: 0,
       },
-      currentPair,
+      rootPairCodes.axis,
+      rootPairCodes.child,
       action,
       0,
       profileId,
@@ -740,15 +757,17 @@ export function searchBestMove({
     if (!pair) {
       break;
     }
+    const { axis: axisCode, child: childCode } = pairToCodes(pair);
 
     const expanded = [];
 
     for (const node of frontier) {
-      const actions = enumerateLegalActions(node.board, pair);
+      const actions = fastEnumerateLegalActions(node.board, axisCode, childCode);
       for (const action of actions) {
         const child = createExpandedNode(
           node,
-          pair,
+          axisCode,
+          childCode,
           action,
           depthIndex,
           profileId,
@@ -770,7 +789,7 @@ export function searchBestMove({
     if (normalizedSettings.dedupe) {
       const bestByKey = new Map();
       for (const child of expanded) {
-        const key = `${child.rootKey}|${boardKey(child.board)}`;
+        const key = `${child.rootKey}|${fastBoardKey(child.board)}`;
         const existing = bestByKey.get(key);
         if (!existing || child.searchScore > existing.searchScore) {
           bestByKey.set(key, child);
@@ -811,7 +830,7 @@ export function searchBestMove({
   let sampling = null;
 
   if (normalizedSettings.sampleCount > 0 && candidatePairs.length > 0) {
-    const rootBoardKey = boardKey(board);
+    const rootBoardKey = boardToRows(board).join("");
     const rng = createRng(
       `sample:${normalizedSettings.sampleSeed}:${turn}:${rootBoardKey}`,
     );
