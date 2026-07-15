@@ -107,6 +107,94 @@ test("known GGGRRR board produces the expected virtual double chain", () => {
   assert.ok(features.virtualChainCount2Plus >= 1);
 });
 
+test("liberty bitmask matches legacy on a group whose only liberty is an empty (height 0) column", () => {
+  // Two-cell group RR sitting on the floor; its rightward neighbor column is
+  // completely empty, so that neighbor's "surface" row is row 0 itself. This
+  // exercises the height-0 edge of the surface mask (bit position 0).
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "RR....",
+  ]);
+  const fastBoard = fromLegacyBoard(board);
+
+  const legacy = extractBoardFeatures(board);
+  const fast = extractBoardFeaturesFast(fastBoard);
+  assert.deepEqual(fast, legacy);
+
+  assert.equal(fast.group2Count, 1);
+  assert.equal(fast.extendableGroup2Count, 1);
+  assert.equal(fast.surfaceExtendableGroup2Count, 1);
+});
+
+test("liberty bitmask matches legacy on a group touching the visible board's top row (y = 11)", () => {
+  // Column 0 is stacked to the very top of the visible board (height 12)
+  // with the group occupying its top two cells; the hidden row above (y=12)
+  // must not leak into the liberty count.
+  const board = boardFromRows([
+    "R.....",
+    "R.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+    "O.....",
+  ]);
+  const fastBoard = fromLegacyBoard(board);
+
+  const legacy = extractBoardFeatures(board);
+  const fast = extractBoardFeaturesFast(fastBoard);
+  assert.deepEqual(fast, legacy);
+
+  assert.equal(fast.group2Count, 1);
+  assert.equal(fast.extendableGroup2Count, 1);
+  assert.equal(fast.surfaceExtendableGroup2Count, 0);
+});
+
+test("liberty bitmask matches legacy when two different-colored groups share adjacent empty cells", () => {
+  // Columns 0 and 2 each hold a 2-cell group, separated by an empty column 1
+  // (and bordered on the far side by empty columns 3-5). Both groups reach
+  // into overlapping empty territory, exercising per-group mask isolation.
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "R.G...",
+    "R.G...",
+  ]);
+  const fastBoard = fromLegacyBoard(board);
+
+  const legacy = extractBoardFeatures(board);
+  const fast = extractBoardFeaturesFast(fastBoard);
+  assert.deepEqual(fast, legacy);
+
+  assert.equal(fast.group2Count, 2);
+  assert.equal(fast.extendableGroup2Count, 2);
+  assert.equal(fast.surfaceExtendableGroup2Count, 2);
+  assert.equal(fast.isolatedSingles, 0);
+});
+
 test("cache returns the same object for repeated calls and separates base/full entries", () => {
   const rng = createRng("features-fast-cache");
   const board = generateStableBoard(rng, {

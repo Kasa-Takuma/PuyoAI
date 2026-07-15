@@ -312,11 +312,11 @@ function clamp(value, min, max) {
 // shifting down (`>>> 1`) pushes lane B's bit 16 into lane A's bit 15.
 // Horizontal (x) shifts move whole 16-bit lanes between/within words and
 // never leak, since lanes are already word-aligned.
-const BB_WORDS = 3;
-const LANE_BITS = 16;
+export const BB_WORDS = 3;
+export const LANE_BITS = 16;
 const UP_LEAK_MASK = 0xfffeffff; // clears bit16 (lane A bit15 -> lane B bit0 leak)
 const DOWN_LEAK_MASK = 0xffff7fff; // clears bit15 (lane B bit16 -> lane A bit15 leak)
-const VISIBLE_MASK = 0x0fff0fff; // bits 0-11 of each lane (VISIBLE_HEIGHT = 12)
+export const VISIBLE_MASK = 0x0fff0fff; // bits 0-11 of each lane (VISIBLE_HEIGHT = 12)
 const BOARD_MASK = 0x3fff3fff; // bits 0-13 of each lane (BOARD_HEIGHT = 14)
 
 // bbUp/bbDown/bbLeft/bbRight are the single-direction building blocks of
@@ -360,7 +360,7 @@ export function bbLeft(out, w) {
 // shifts are computed inline (matching bbUp/bbDown/bbLeft/bbRight exactly)
 // instead of calling those helpers through scratch buffers, to avoid extra
 // typed-array round-trips per iteration.
-function bbDilate(out, w) {
+export function bbDilate(out, w) {
   const w0 = w[0];
   const w1 = w[1];
   const w2 = w[2];
@@ -389,7 +389,7 @@ function bbDilate(out, w) {
   out[2] = merged2;
 }
 
-function popcount32(value) {
+export function popcount32(value) {
   let v = value >>> 0;
   v = v - ((v >>> 1) & 0x55555555);
   v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
@@ -397,7 +397,7 @@ function popcount32(value) {
   return (v * 0x01010101) >>> 24;
 }
 
-function bbPopcount(bits) {
+export function bbPopcount(bits) {
   return popcount32(bits[0]) + popcount32(bits[1]) + popcount32(bits[2]);
 }
 
@@ -431,8 +431,10 @@ function clearMaskCells(working, bits) {
 
 // COLOR_MASKS[color] holds the bitboard for that FAST_COLORS code (indices
 // 0..5, i.e. EMPTY through GARBAGE), rebuilt from scratch on every call to
-// findMatchedGroups.
-const COLOR_MASKS = [
+// findMatchedGroups. Exported so other bitboard-based consumers (e.g.
+// features-fast.js) can read the freshly-built masks after calling
+// buildColorMasks without duplicating the cell-scan loop.
+export const COLOR_MASKS = [
   new Uint32Array(BB_WORDS),
   new Uint32Array(BB_WORDS),
   new Uint32Array(BB_WORDS),
@@ -441,7 +443,7 @@ const COLOR_MASKS = [
   new Uint32Array(BB_WORDS),
 ];
 
-function buildColorMasks(fastBoard) {
+export function buildColorMasks(fastBoard) {
   for (let c = 0; c < COLOR_MASKS.length; c += 1) {
     COLOR_MASKS[c][0] = 0;
     COLOR_MASKS[c][1] = 0;
