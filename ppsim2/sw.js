@@ -1,4 +1,4 @@
-const CACHE_NAME = 'puyo-sim-v5';
+const CACHE_NAME = 'puyo-sim-v6';
 const urlsToCache = [
     './',
     './index.html',
@@ -49,6 +49,18 @@ self.addEventListener('activate', function(event) {
 self.addEventListener('fetch', function(event) {
     // GETリクエストのみをキャッシュ
     if (event.request.method !== 'GET') {
+        return;
+    }
+
+    // ppsim2ディレクトリ外のESモジュール群（/src/配下）は更新が即反映されるようネットワーク優先にする
+    const isSrcModule = new URL(event.request.url).pathname.includes('/src/');
+    if (isSrcModule) {
+        event.respondWith(
+            fetch(event.request).catch(function(error) {
+                console.log('Fetch failed, falling back to cache:', error);
+                return caches.match(event.request);
+            })
+        );
         return;
     }
 
