@@ -1,6 +1,6 @@
 import { boardToRows, encodeAction } from "../core/board.js";
 import {
-  fastBoardKey,
+  fastBoardHash,
   fastEnumerateLegalActions,
   fastResolveTurn,
   fromLegacyBoard,
@@ -131,6 +131,20 @@ function cloneAction(action) {
     column: action.column,
     orientation: action.orientation,
   };
+}
+
+// Nodes only store a parent pointer and the single action that produced
+// them (see createExpandedNode) rather than a concatenated path array, since
+// path arrays would otherwise be allocated for every expanded node even
+// though only a handful of surviving candidates ever need their full line.
+// The root sentinel node has no `action`, which terminates the walk.
+function buildLine(node) {
+  const line = [];
+  for (let current = node; current && current.action; current = current.parent) {
+    line.push(cloneAction(current.action));
+  }
+  line.reverse();
+  return line;
 }
 
 function rememberCandidateNode(candidatePools, node, maxPerRoot = 3) {
@@ -508,7 +522,6 @@ function createExpandedNode(
   const searchScore = cumulativeValue + heuristicScore;
   const rootAction = node.rootAction ?? cloneAction(action);
   const rootKey = node.rootKey ?? encodeAction(action);
-  const path = node.path.concat(cloneAction(action));
   const rootTurn = node.rootTurn ?? {
     score: result.totalScore,
     chains: result.totalChains,
@@ -523,7 +536,8 @@ function createExpandedNode(
     rootAction,
     rootKey,
     rootTurn,
-    path,
+    parent: node,
+    action: cloneAction(action),
     cumulativeValue,
     projectedScore,
     searchScore,
@@ -591,7 +605,7 @@ function createCandidate(node, rootContext) {
     immediateAllClear: node.rootTurn.allClear,
     sampleScore: null,
     bestDepth: node.bestDepth,
-    line: node.path.map((action) => cloneAction(action)),
+    line: buildLine(node),
     leafFeatures: refinedFeatures,
     featureVector: featuresToVector(refinedFeatures),
     leafResult: {
@@ -652,7 +666,7 @@ function runSampleRollout({
 
     const bestByKey = new Map();
     for (const child of expanded) {
-      const key = fastBoardKey(child.board);
+      const key = fastBoardHash(child.board);
       const existing = bestByKey.get(key);
       if (!existing || child.nodeScore > existing.nodeScore) {
         bestByKey.set(key, child);
@@ -732,7 +746,6 @@ export function searchBestMove({
         rootAction: null,
         rootKey: null,
         rootTurn: null,
-        path: [],
         cumulativeValue: 0,
         projectedScore: 0,
         expandedNodes: 0,
@@ -787,15 +800,25 @@ export function searchBestMove({
 
     let survivors = expanded;
     if (normalizedSettings.dedupe) {
-      const bestByKey = new Map();
+      const bestByRootKey = new Map();
       for (const child of expanded) {
-        const key = `${child.rootKey}|${fastBoardKey(child.board)}`;
-        const existing = bestByKey.get(key);
+        let bestByHash = bestByRootKey.get(child.rootKey);
+        if (!bestByHash) {
+          bestByHash = new Map();
+          bestByRootKey.set(child.rootKey, bestByHash);
+        }
+        const hash = fastBoardHash(child.board);
+        const existing = bestByHash.get(hash);
         if (!existing || child.searchScore > existing.searchScore) {
-          bestByKey.set(key, child);
+          bestByHash.set(hash, child);
         }
       }
-      survivors = [...bestByKey.values()];
+      survivors = [];
+      for (const bestByHash of bestByRootKey.values()) {
+        for (const child of bestByHash.values()) {
+          survivors.push(child);
+        }
+      }
       for (const child of survivors) {
         rememberCandidateNode(candidatePools, child);
       }

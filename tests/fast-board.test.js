@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   colorToCode,
   codeToColor,
+  fastBoardHash,
   fastBoardKey,
   fastColumnHeights,
   fastEnumerateLegalActions,
@@ -326,4 +327,40 @@ test("fastBoardKey uniquely identifies board contents", () => {
   const keyA = fastBoardKey(fromLegacyBoard(sampleBoard));
   const keyB = fastBoardKey(fromLegacyBoard(sampleBoard));
   assert.equal(keyA, keyB);
+});
+
+test("fastBoardHash is deterministic for the same board contents", () => {
+  const rng = createRng("fast-board-hash-determinism");
+  const boards = generateBoardSet(rng, 30);
+
+  for (const board of boards) {
+    const hashA = fastBoardHash(fromLegacyBoard(board));
+    const hashB = fastBoardHash(fromLegacyBoard(board));
+    assert.equal(hashA, hashB);
+  }
+});
+
+test("fastBoardHash has zero collisions across 1000 random boards", () => {
+  const rng = createRng("fast-board-hash-collisions");
+  const boards = generateBoardSet(rng, 1000);
+  const keyByHash = new Map();
+  let collisions = 0;
+
+  for (const board of boards) {
+    const fastBoard = fromLegacyBoard(board);
+    const hash = fastBoardHash(fastBoard);
+    const key = fastBoardKey(fastBoard);
+
+    const existingKey = keyByHash.get(hash);
+    if (existingKey !== undefined && existingKey !== key) {
+      collisions += 1;
+    }
+    keyByHash.set(hash, key);
+  }
+
+  assert.equal(
+    collisions,
+    0,
+    `expected zero hash collisions across ${boards.length} boards, got ${collisions}`,
+  );
 });

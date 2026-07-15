@@ -14,7 +14,7 @@ import {
 } from "../core/constants.js";
 import {
   FAST_COLORS,
-  fastBoardKey,
+  fastBoardHash,
   fastColumnHeights,
   fastEnumerateLegalActions,
   fastResolveTurn,
@@ -45,6 +45,15 @@ const groupStack = new Int16Array(CELL_COUNT);
 
 function isFeatureColorCode(code) {
   return code !== FAST_COLORS.EMPTY && code !== FAST_COLORS.GARBAGE;
+}
+
+function fastBoardsEqual(a, b) {
+  for (let i = 0; i < CELL_COUNT; i += 1) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function countOccupiedCellsFast(fastBoard) {
@@ -210,10 +219,10 @@ export function extractBoardFeaturesFast(
   fastBoard,
   { includeVirtualChains = true } = {},
 ) {
-  const key = `${includeVirtualChains ? "full" : "base"}:${fastBoardKey(fastBoard)}`;
+  const key = fastBoardHash(fastBoard) * 2 + (includeVirtualChains ? 1 : 0);
   const cached = FAST_FEATURE_CACHE.get(key);
-  if (cached) {
-    return cached;
+  if (cached && fastBoardsEqual(cached.board, fastBoard)) {
+    return cached.features;
   }
 
   const heights = fastColumnHeights(fastBoard);
@@ -353,6 +362,6 @@ export function extractBoardFeaturesFast(
   if (FAST_FEATURE_CACHE.size >= MAX_FAST_FEATURE_CACHE_SIZE) {
     FAST_FEATURE_CACHE.clear();
   }
-  FAST_FEATURE_CACHE.set(key, features);
+  FAST_FEATURE_CACHE.set(key, { board: fastBoard.slice(), features });
   return features;
 }

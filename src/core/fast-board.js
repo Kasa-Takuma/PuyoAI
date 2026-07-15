@@ -116,6 +116,31 @@ export function fastBoardKey(fastBoard) {
   return String.fromCharCode.apply(null, fastBoard);
 }
 
+// Two independent 32bit FNV-1a variants (different offset basis / prime),
+// combined into a single 44bit integer safely within Number's 53bit exact
+// range: the low 22 bits of h1 become the high bits, and the high 22 bits of
+// h2 become the low bits. This avoids the string allocation + hashing cost
+// of fastBoardKey on search hot paths where the key only needs to dedupe
+// board states (a false-positive collision merely drops one candidate; it
+// cannot corrupt correctness of callers that also verify board equality).
+const FNV_OFFSET_1 = 0x811c9dc5;
+const FNV_PRIME_1 = 0x01000193;
+const FNV_OFFSET_2 = 0x9e3779b9;
+const FNV_PRIME_2 = 0x85ebca6b;
+
+export function fastBoardHash(fastBoard) {
+  let h1 = FNV_OFFSET_1;
+  let h2 = FNV_OFFSET_2;
+  for (let i = 0; i < CELL_COUNT; i += 1) {
+    const byte = fastBoard[i];
+    h1 = Math.imul(h1 ^ byte, FNV_PRIME_1);
+    h2 = Math.imul(h2 ^ byte, FNV_PRIME_2);
+  }
+  h1 >>>= 0;
+  h2 >>>= 0;
+  return (h1 & 0x3fffff) * 4194304 + (h2 >>> 10);
+}
+
 function enumerateDifferentColorActions() {
   const actions = [];
 
