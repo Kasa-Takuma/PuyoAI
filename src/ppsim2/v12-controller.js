@@ -45,6 +45,9 @@ const SEARCH_SETTINGS = {
 };
 const AUTO_INTERVAL_MS = 160;
 const FAST_AUTO_INTERVAL_MS = 0;
+// Polling cadence while waiting through gameover/menus (not actively
+// playing), so a 0ms fast-auto interval doesn't busy-loop while idle.
+const IDLE_AUTO_INTERVAL_MS = 500;
 const LIMITED_HORIZONTAL_MOVE_DELAY_MS = 90;
 
 let autoEnabled = false;
@@ -728,6 +731,16 @@ function scheduleAutoTick() {
     autoTimer = null;
   }
 
+  // Poll slowly while idle (gameover/menus) instead of busy-looping at
+  // fast-auto's 0ms interval; AI自動 stays ON through gameover and resumes
+  // automatically once the next game starts.
+  const delay =
+    getGameState() !== "playing"
+      ? IDLE_AUTO_INTERVAL_MS
+      : fastAutoEnabled
+        ? FAST_AUTO_INTERVAL_MS
+        : AUTO_INTERVAL_MS;
+
   autoTimer = window.setTimeout(async () => {
     autoTimer = null;
     if (!autoEnabled) {
@@ -735,21 +748,16 @@ function scheduleAutoTick() {
     }
 
     const gameState = getGameState();
-    if (gameState === "gameover") {
-      autoEnabled = false;
-      setAutoButton(false);
-      aiStatus("ゲームオーバー");
-      return;
-    }
-
     if (!aiBusy && gameState === "playing" && getCurrentPuyo()) {
       await runPuyoAIInternal();
+    } else if (gameState === "gameover") {
+      aiStatus("ゲームオーバー (AI自動待機中)");
     } else if (gameState !== "playing") {
       aiStatus(`PuyoAI ${getActiveProfileLabel()} 待機中`);
     }
 
     scheduleAutoTick();
-  }, fastAutoEnabled ? FAST_AUTO_INTERVAL_MS : AUTO_INTERVAL_MS);
+  }, delay);
 }
 
 window.PuyoAI = {
