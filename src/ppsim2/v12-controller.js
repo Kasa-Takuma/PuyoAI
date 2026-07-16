@@ -14,6 +14,7 @@ const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
 const SAMPLING_STORAGE_KEY = "puyoai.ppsim2.sampling";
 const FAST_AUTO_STORAGE_KEY = "puyoai.ppsim2.fastAuto";
 const ENGINE_STORAGE_KEY = "puyoai.ppsim2.aiEngine";
+const TEMPLATE_BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.templateBeamWidth";
 const AI_ENGINES = Object.freeze([
   { id: "search", label: "探索AI" },
   { id: "template", label: "テンプレAI" },
@@ -22,10 +23,12 @@ const DEFAULT_AI_ENGINE = "search";
 const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 48;
+const DEFAULT_TEMPLATE_BEAM_WIDTH = 14;
 const DEFAULT_SAMPLING_ENABLED = true;
 const MAX_SEARCH_DEPTH = 51;
 const MAX_INTERNAL_NEXT_PAIRS = MAX_SEARCH_DEPTH - 1;
 const BEAM_WIDTH_OPTIONS = Object.freeze([12, 16, 24, 36, 48, 72, 96]);
+const TEMPLATE_BEAM_WIDTH_OPTIONS = Object.freeze([8, 14, 24, 32, 48]);
 const SAMPLING_SETTINGS = Object.freeze({
   sampleCount: 8,
   sampleDepth: 4,
@@ -51,6 +54,7 @@ let horizontalMoveLimited = false;
 let samplingEnabled = DEFAULT_SAMPLING_ENABLED;
 let fastAutoEnabled = false;
 let aiEngine = DEFAULT_AI_ENGINE;
+let templateBeamWidth = DEFAULT_TEMPLATE_BEAM_WIDTH;
 
 class MovementError extends Error {
   constructor(message, phase) {
@@ -151,6 +155,11 @@ function normalizeBeamWidth(beamWidth) {
   return Math.max(4, Math.min(96, Number.parseInt(beamWidth, 10) || DEFAULT_BEAM_WIDTH));
 }
 
+function normalizeTemplateBeamWidth(beamWidth) {
+  const parsed = Number.parseInt(beamWidth, 10);
+  return TEMPLATE_BEAM_WIDTH_OPTIONS.includes(parsed) ? parsed : DEFAULT_TEMPLATE_BEAM_WIDTH;
+}
+
 function getActiveProfile() {
   return (
     PPSIM_PROFILE_OPTIONS.find((profile) => profile.id === SEARCH_SETTINGS.searchProfile) ??
@@ -235,6 +244,19 @@ function renderAiEngineSelect() {
   select.value = aiEngine;
 }
 
+// Settings that only apply to one AI engine are hidden for the other, so the
+// panel only shows controls relevant to the currently selected engine.
+function updateEngineSettingsVisibility() {
+  const searchSettings = document.getElementById("search-ai-settings");
+  if (searchSettings) {
+    searchSettings.style.display = aiEngine === "template" ? "none" : "";
+  }
+  const templateSettings = document.getElementById("template-ai-settings");
+  if (templateSettings) {
+    templateSettings.style.display = aiEngine === "template" ? "" : "none";
+  }
+}
+
 function setAiEngine(engineId) {
   aiEngine = normalizeAiEngine(engineId);
   storeAiEngine(aiEngine);
@@ -242,6 +264,7 @@ function setAiEngine(engineId) {
   if (select && select.value !== aiEngine) {
     select.value = aiEngine;
   }
+  updateEngineSettingsVisibility();
   setAutoButton(autoEnabled);
   aiStatus(`PuyoAI ${getActiveProfileLabel()} を選択しました`);
 }
@@ -311,6 +334,22 @@ function renderSearchSettingInputs() {
   updateSearchSettingsDescription();
 }
 
+function renderTemplateBeamWidthSelect() {
+  const select = document.getElementById("ai-template-beam-width-select");
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = "";
+  for (const beamWidth of TEMPLATE_BEAM_WIDTH_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = String(beamWidth);
+    option.textContent = String(beamWidth);
+    select.appendChild(option);
+  }
+  select.value = String(templateBeamWidth);
+}
+
 function setSearchDepth(depth) {
   SEARCH_SETTINGS.depth = normalizeDepth(depth);
   storeNumber(DEPTH_STORAGE_KEY, SEARCH_SETTINGS.depth);
@@ -331,6 +370,16 @@ function setBeamWidth(beamWidth) {
   }
   updateSearchSettingsDescription();
   aiStatus(`AI Beam Width ${SEARCH_SETTINGS.beamWidth} に変更しました`);
+}
+
+function setTemplateBeamWidth(beamWidth) {
+  templateBeamWidth = normalizeTemplateBeamWidth(beamWidth);
+  storeNumber(TEMPLATE_BEAM_WIDTH_STORAGE_KEY, templateBeamWidth);
+  const select = document.getElementById("ai-template-beam-width-select");
+  if (select && select.value !== String(templateBeamWidth)) {
+    select.value = String(templateBeamWidth);
+  }
+  aiStatus(`テンプレAI Beam Width ${templateBeamWidth} に変更しました`);
 }
 
 function applySamplingSettings() {
@@ -413,7 +462,7 @@ function buildSearchPayload() {
     board: convertBoard(ppsimBoard),
     currentPair,
     nextQueue,
-    settings: { ...SEARCH_SETTINGS },
+    settings: { ...SEARCH_SETTINGS, templateBeamWidth },
     pendingOjama: typeof window.getPendingOjama === "function" ? (window.getPendingOjama() | 0) : 0,
     opponent,
   };
@@ -739,6 +788,10 @@ window.setPuyoAIBeamWidth = function setPuyoAIBeamWidth(beamWidth) {
   setBeamWidth(beamWidth);
 };
 
+window.setPuyoAITemplateBeamWidth = function setPuyoAITemplateBeamWidth(beamWidth) {
+  setTemplateBeamWidth(beamWidth);
+};
+
 window.setPuyoAISamplingEnabled = function setPuyoAISamplingEnabled(enabled) {
   setSamplingEnabled(enabled);
 };
@@ -768,12 +821,15 @@ function initializeAiControls() {
   SEARCH_SETTINGS.searchProfile = normalizeProfileId(getStoredProfileId());
   SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
   SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
+  templateBeamWidth = normalizeTemplateBeamWidth(getStoredNumber(TEMPLATE_BEAM_WIDTH_STORAGE_KEY));
   samplingEnabled = getStoredFlag(SAMPLING_STORAGE_KEY, DEFAULT_SAMPLING_ENABLED);
   fastAutoEnabled = getStoredFlag(FAST_AUTO_STORAGE_KEY, false);
   applySamplingSettings();
   renderAiEngineSelect();
   renderProfileSelect();
   renderSearchSettingInputs();
+  renderTemplateBeamWidthSelect();
+  updateEngineSettingsVisibility();
   setAutoButton(false);
   setMoveLimitButton(false);
   setStepButtonDisabled(false);
