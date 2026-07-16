@@ -139,6 +139,19 @@ const CONFIGS = [
       sampleWeight: 1,
     },
   },
+  {
+    label: "scaled_mid",
+    settings: {
+      dedupe: true,
+      beamWidth: 48,
+      sampleCount: 8,
+      sampleDepth: 4,
+      sampleBeamWidth: 8,
+      sampleTopK: 12,
+      sampleWeight: 1,
+      midRerankTopM: 48,
+    },
+  },
   { label: "baseline", settings: { dedupe: true, sampleCount: 0 } },
 ];
 

@@ -53,6 +53,10 @@ function clampSampleValueWeight(sampleValueWeight) {
   return Math.max(0, Math.min(1_000_000, Number.isFinite(parsed) ? parsed : 0));
 }
 
+function clampMidRerankTopM(midRerankTopM) {
+  return Math.max(0, Math.min(96, Number.parseInt(midRerankTopM, 10) || 0));
+}
+
 function normalizeSampleSeed(sampleSeed) {
   return typeof sampleSeed === "string" && sampleSeed.length > 0
     ? sampleSeed
@@ -118,6 +122,7 @@ function normalizeSettings(settings = {}) {
     sampleSeed: normalizeSampleSeed(settings.sampleSeed),
     sampleRefineLeaf: settings.sampleRefineLeaf === true,
     sampleValueWeight: clampSampleValueWeight(settings.sampleValueWeight),
+    midRerankTopM: clampMidRerankTopM(settings.midRerankTopM),
   };
   if (profileConfig) {
     normalizedSettings.baseSearchProfile = normalizedProfile.id;
@@ -821,6 +826,27 @@ export function searchBestMove({
       }
       for (const child of survivors) {
         rememberCandidateNode(candidatePools, child);
+      }
+    }
+
+    if (normalizedSettings.midRerankTopM > 0) {
+      const rerankSorted = [...survivors].sort(
+        (left, right) => right.searchScore - left.searchScore,
+      );
+      const rerankCount = Math.min(normalizedSettings.midRerankTopM, rerankSorted.length);
+      for (let i = 0; i < rerankCount; i += 1) {
+        const node = rerankSorted[i];
+        const fullFeatures = extractBoardFeaturesFast(node.board, {
+          includeVirtualChains: true,
+        });
+        const fullHeuristic = scoreBoardFeatures(
+          fullFeatures,
+          node.profileId,
+          node.profileConfig,
+        );
+        node.heuristicScore = fullHeuristic;
+        node.searchScore = node.cumulativeValue + fullHeuristic;
+        node.lastFeatures = fullFeatures;
       }
     }
 

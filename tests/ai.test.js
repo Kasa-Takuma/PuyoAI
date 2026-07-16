@@ -1096,3 +1096,120 @@ test("sample value weight uses the provided value model", () => {
     withoutWeight.candidates[0].sampleScore,
   );
 });
+
+test("mid rerank settings are echoed and default off", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+
+  const defaultAnalysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24 },
+  });
+
+  assert.equal(defaultAnalysis.settings.midRerankTopM, 0);
+
+  const explicitAnalysis = searchBestMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { depth: 1, beamWidth: 24, midRerankTopM: 16 },
+  });
+
+  assert.equal(explicitAnalysis.settings.midRerankTopM, 16);
+});
+
+test("mid rerank keeps determinism and legal actions", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const nextQueue = [
+    { axis: COLORS.BLUE, child: COLORS.YELLOW },
+    { axis: COLORS.GREEN, child: COLORS.RED },
+  ];
+  const settings = {
+    depth: 3,
+    beamWidth: 24,
+    midRerankTopM: 16,
+  };
+
+  const first = searchBestMove({ board, currentPair, nextQueue, settings });
+  const second = searchBestMove({ board, currentPair, nextQueue, settings });
+
+  assert.equal(first.bestActionKey, second.bestActionKey);
+  assert.equal(first.bestScore, second.bestScore);
+  assert.doesNotThrow(() => resolveTurn(board, currentPair, first.bestAction));
+});
+
+test("mid rerank off matches previous behavior", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = {
+    axis: COLORS.RED,
+    child: COLORS.GREEN,
+  };
+  const nextQueue = [
+    { axis: COLORS.BLUE, child: COLORS.YELLOW },
+    { axis: COLORS.GREEN, child: COLORS.RED },
+  ];
+
+  const withExplicitZero = searchBestMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { depth: 3, beamWidth: 24, midRerankTopM: 0 },
+  });
+  const withDefault = searchBestMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { depth: 3, beamWidth: 24 },
+  });
+
+  assert.equal(withExplicitZero.bestActionKey, withDefault.bestActionKey);
+  assert.equal(withExplicitZero.bestScore, withDefault.bestScore);
+});
