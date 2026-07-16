@@ -18,6 +18,7 @@
     let oppScore = 0;
     let oppChainCount = 0;
     let oppOjamaPending = 0;
+    let lastOpponentSnapshot = null;
 
     let boardSyncTimer = null;
     const BOARD_SYNC_INTERVAL = 100;
@@ -447,6 +448,13 @@
                 oppChainCount = data.chainCount || 0;
                 oppOjamaPending = data.ojamaPending || 0;
                 updateOpponentInfo();
+                lastOpponentSnapshot = {
+                    board: data.board,
+                    gameState: data.gameState,
+                    score: data.score,
+                    chainCount: data.chainCount,
+                    ojamaPending: data.ojamaPending
+                };
                 break;
 
             case 'SYNC_NEXT':
@@ -553,6 +561,7 @@
         oppScore = 0;
         oppChainCount = 0;
         oppOjamaPending = 0;
+        lastOpponentSnapshot = null;
         isMatchActive = true;
         rematchRequested = false;
         rematchPendingFromOpponent = false;
@@ -705,6 +714,10 @@
 
     window.sendBoardData = sendBoardData;
 
+    window.getOpponentSnapshot = function() {
+        return isMatchActive ? lastOpponentSnapshot : null;
+    };
+
     window.notifyGameOver = function() {
         if (isMatchActive && conn && conn.open) {
             conn.send({ type: 'OPPONENT_LOST' });
@@ -766,6 +779,7 @@
 
     function endMatch() {
         isMatchActive = false;
+        lastOpponentSnapshot = null;
         document.body.classList.remove('online-match-active');
         stopBoardSync();
 

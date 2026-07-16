@@ -43,6 +43,14 @@ settings under `Search AI` below), using the `scaled` configuration
 raises per-move search time from roughly 16ms (`baseline`) to roughly 400ms
 (`scaled`). Turn it off from the settings panel if you need faster moves.
 
+The settings panel also lets you switch the AI engine between the search AI
+(described below) and a lightweight template AI (`src/ai/template-ai.js`,
+`src/ai/template-opening-book.js`) modeled on gata272/puyoAI2: a fixed
+chigiri-avoidance opening book for the first three pairs, followed by a small
+beam search over hand-crafted board/chain heuristics. On the battle page it
+also threads pending おじゃま (incoming garbage offsetting and landing) through
+that search, so it can weigh chains that clear or reduce the threat.
+
 The original viewer and batch runner remain separate from this page.
 
 ## Deploy To GitHub Pages

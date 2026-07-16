@@ -1,4 +1,5 @@
 import { SEARCH_PROFILES, searchBestMove } from "../ai/search.js";
+import { analyzeTemplateMove } from "../ai/template-ai.js";
 import {
   convertActionToPpsimPlacement,
   convertBoard,
@@ -12,6 +13,12 @@ const DEPTH_STORAGE_KEY = "puyoai.ppsim2.depth";
 const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
 const SAMPLING_STORAGE_KEY = "puyoai.ppsim2.sampling";
 const FAST_AUTO_STORAGE_KEY = "puyoai.ppsim2.fastAuto";
+const ENGINE_STORAGE_KEY = "puyoai.ppsim2.aiEngine";
+const AI_ENGINES = Object.freeze([
+  { id: "search", label: "探索AI" },
+  { id: "template", label: "テンプレAI" },
+]);
+const DEFAULT_AI_ENGINE = "search";
 const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 48;
@@ -43,6 +50,7 @@ let aiBusy = false;
 let horizontalMoveLimited = false;
 let samplingEnabled = DEFAULT_SAMPLING_ENABLED;
 let fastAutoEnabled = false;
+let aiEngine = DEFAULT_AI_ENGINE;
 
 class MovementError extends Error {
   constructor(message, phase) {
@@ -109,6 +117,26 @@ function storeFlag(key, value) {
   }
 }
 
+function getStoredAiEngine() {
+  try {
+    return window.localStorage?.getItem(ENGINE_STORAGE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function storeAiEngine(engineId) {
+  try {
+    window.localStorage?.setItem(ENGINE_STORAGE_KEY, engineId);
+  } catch {
+    // Storage can be unavailable in private browsing or file contexts.
+  }
+}
+
+function normalizeAiEngine(engineId) {
+  return AI_ENGINES.some((engine) => engine.id === engineId) ? engineId : DEFAULT_AI_ENGINE;
+}
+
 function normalizeProfileId(profileId) {
   return PPSIM_PROFILE_OPTIONS.some((profile) => profile.id === profileId)
     ? profileId
@@ -132,6 +160,9 @@ function getActiveProfile() {
 }
 
 function getActiveProfileLabel() {
+  if (aiEngine === "template") {
+    return "Template";
+  }
   return getActiveProfile()?.label?.replace("Chain Builder ", "") ?? "v13";
 }
 
@@ -186,6 +217,33 @@ function renderProfileSelect() {
   }
   select.value = SEARCH_SETTINGS.searchProfile;
   updateProfileDescription();
+}
+
+function renderAiEngineSelect() {
+  const select = document.getElementById("ai-engine-select");
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = "";
+  for (const engine of AI_ENGINES) {
+    const option = document.createElement("option");
+    option.value = engine.id;
+    option.textContent = engine.label;
+    select.appendChild(option);
+  }
+  select.value = aiEngine;
+}
+
+function setAiEngine(engineId) {
+  aiEngine = normalizeAiEngine(engineId);
+  storeAiEngine(aiEngine);
+  const select = document.getElementById("ai-engine-select");
+  if (select && select.value !== aiEngine) {
+    select.value = aiEngine;
+  }
+  setAutoButton(autoEnabled);
+  aiStatus(`PuyoAI ${getActiveProfileLabel()} を選択しました`);
 }
 
 function setSearchProfile(profileId) {
@@ -327,10 +385,10 @@ function buildSearchPayload() {
   const ppsimBoard =
     typeof window.getBoardSnapshot === "function" ? window.getBoardSnapshot() : null;
   const currentPair = convertCurrentPair(getCurrentPuyo());
-  const requiredNextPairs = Math.min(
-    MAX_INTERNAL_NEXT_PAIRS,
-    Math.max(0, SEARCH_SETTINGS.depth - 1),
-  );
+  const requiredNextPairs =
+    aiEngine === "template"
+      ? 2
+      : Math.min(MAX_INTERNAL_NEXT_PAIRS, Math.max(0, SEARCH_SETTINGS.depth - 1));
   const nextQueue = convertNextQueue(
     typeof window.getUpcomingPairs === "function"
       ? window.getUpcomingPairs(requiredNextPairs)
@@ -341,11 +399,23 @@ function buildSearchPayload() {
     return null;
   }
 
+  const opponentSnapshot =
+    typeof window.getOpponentSnapshot === "function" ? window.getOpponentSnapshot() : null;
+  const opponent =
+    opponentSnapshot && Array.isArray(opponentSnapshot.board)
+      ? {
+          board: convertBoard(opponentSnapshot.board),
+          pendingOjama: opponentSnapshot.ojamaPending | 0,
+        }
+      : null;
+
   return {
     board: convertBoard(ppsimBoard),
     currentPair,
     nextQueue,
     settings: { ...SEARCH_SETTINGS },
+    pendingOjama: typeof window.getPendingOjama === "function" ? (window.getPendingOjama() | 0) : 0,
+    opponent,
   };
 }
 
@@ -572,7 +642,7 @@ async function runPuyoAIInternal() {
   aiStatus(`PuyoAI ${getActiveProfileLabel()} 思考中...`);
 
   try {
-    const analysis = searchBestMove(payload);
+    const analysis = aiEngine === "template" ? analyzeTemplateMove(payload) : searchBestMove(payload);
     const applied = await applyReachableCandidate(analysis);
     const chains = applied.candidate?.immediateChains ?? 0;
     const fallbackText =
@@ -653,6 +723,10 @@ window.toggleAIMoveLimit = function toggleAIMoveLimit() {
   );
 };
 
+window.setPuyoAIEngine = function setPuyoAIEngine(engineId) {
+  setAiEngine(engineId);
+};
+
 window.setPuyoAIProfile = function setPuyoAIProfile(profileId) {
   setSearchProfile(profileId);
 };
@@ -690,12 +764,14 @@ window.toggleAIAuto = function toggleAIAuto() {
 };
 
 function initializeAiControls() {
+  aiEngine = normalizeAiEngine(getStoredAiEngine());
   SEARCH_SETTINGS.searchProfile = normalizeProfileId(getStoredProfileId());
   SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
   SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
   samplingEnabled = getStoredFlag(SAMPLING_STORAGE_KEY, DEFAULT_SAMPLING_ENABLED);
   fastAutoEnabled = getStoredFlag(FAST_AUTO_STORAGE_KEY, false);
   applySamplingSettings();
+  renderAiEngineSelect();
   renderProfileSelect();
   renderSearchSettingInputs();
   setAutoButton(false);
