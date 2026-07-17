@@ -25,6 +25,9 @@ import {
   pairToCodes,
 } from "../core/fast-board.js";
 import { buildOpeningPlan } from "./template-opening-book.js";
+import { extractBoardFeaturesFast } from "./features-fast.js";
+import { scoreBoardFeatures } from "./features.js";
+import { createRng, nextPair } from "../core/randomizer.js";
 
 const FAST_EMPTY = FAST_COLORS.EMPTY;
 const FAST_GARBAGE = FAST_COLORS.GARBAGE;
@@ -71,6 +74,96 @@ const OFFENSE_MULTIPLIER_CAP = 2.5;
 // とどめ (kill detection): a large bonus for a fire whose outgoing garbage,
 // stacked on the opponent's own pending, would top them out outright.
 const OPPONENT_KILL_BONUS = 800000;
+
+// 段階的重み調整 (phase-adaptive weights): in a SAFE position (no incoming
+// pressure, opponent not threatening, our own stack still low) the search
+// shifts to a chain-growth profile instead of the legacy battle-ready one.
+// The phase is computed once per analyzeTemplateMove call from the ROOT
+// board and used for the whole search; boards reached deeper in the line
+// may in reality be taller by then — an accepted approximation.
+const LEGACY_MAIN_FIRE_WEIGHT = 0.9;
+const LEGACY_MAX_HEIGHT_PENALTY = -30;
+// Tall structured stacks are the point of chain building; the maxHeight>=9/
+// >=10 near-topout penalties in evaluateBoard stay unchanged as the real
+// guardrails regardless of phase.
+const SAFE_MAX_HEIGHT_PENALTY = -14;
+// Valuing the standing main chain slightly ABOVE its realized value makes
+// the search patient (it grows the chain instead of cashing it out); the
+// height decay (bonus shrinks to 0 by rootMaxHeight 9) guarantees it still
+// fires before the board gets dangerous.
+const SAFE_MAIN_FIRE_WEIGHT_BONUS = 0.2;
+const SAFE_MAIN_FIRE_HEIGHT_CAP = 9;
+const SAFE_MAX_ROOT_HEIGHT = 8;
+const SAFE_OPPONENT_THREAT_CEILING = 6;
+// 改善4 (adaptive beam width): safe phases can afford a wider search since
+// there's no incoming danger to react to quickly; battle phase keeps the
+// user's (narrow, fast) beam width setting exactly as before this existed.
+const SAFE_MIN_BEAM_WIDTH = 24;
+// 改善2: blends the repo's evolution-tuned v13 board-feature evaluation into
+// the leaf, on top of the template heuristics above, so growth mode can see
+// multi-step chain structure (bestVirtualChain, topVirtualChainSum, etc.)
+// that the simple template scoring can't represent. Battle-phase behavior is
+// untouched: profile.featureBlend is always 0 there (see LEGACY_GROWTH_
+// PROFILE and buildGrowthProfile). Measured (solo sweep 0/8/24/48 ->
+// avgMaxChain 3.63/3.5/3.3/3.5; battle 14-12, noise) to give no benefit on
+// its own with the 3-ply main search as the bottleneck - defaulted to 0
+// (off) pending a retest once sampling (改善3, below) is in place. The
+// setting/machinery stays so that retest is just a config flip.
+const DEFAULT_FEATURE_BLEND = 0;
+const MAX_FEATURE_BLEND = 64;
+const FEATURE_BLEND_PROFILE_ID = "chain_builder_v13";
+// 改善3 (sampled lookahead): safe-phase-only, deterministic sampled
+// continuations past the leaf's 3-ply horizon, run for only the very top of
+// the full-eval band (see scoreLeafFrontier / runLeafSamples below).
+const DEFAULT_TEMPLATE_SAMPLE_COUNT = 2; // 0 = off
+const MAX_TEMPLATE_SAMPLE_COUNT = 4;
+const DEFAULT_TEMPLATE_SAMPLE_DEPTH = 2;
+const MAX_TEMPLATE_SAMPLE_DEPTH = 3;
+const DEFAULT_TEMPLATE_SAMPLE_BEAM = 4;
+const MAX_TEMPLATE_SAMPLE_BEAM = 8;
+const MIN_TEMPLATE_SAMPLE_BEAM = 2;
+const DEFAULT_TEMPLATE_SAMPLE_TOPK = 2;
+const MAX_TEMPLATE_SAMPLE_TOPK = 4;
+// The sampled continuation REPLACES (a weighted fraction of) the leaf's
+// static virtual-fire estimate rather than stacking on top of it - see the
+// precise blend formula in scoreLeafFrontier.
+const SAMPLE_GAIN_WEIGHT = 0.5;
+// Fixed salt for the sampling rng seed, alongside fastBoardHash(board) and
+// the sample index, so the same position always analyzes identically.
+const SAMPLE_RNG_SALT = "template-leaf-sample-v1";
+// 改善5 (mid-search refine): the cheap per-level sortValue (shaped +
+// evalValue + chainOutcomeValue*0.01) is chain-potential-blind past the
+// current node's own immediate fire, so a board 2 plies from a big chain
+// ranks no better than a tidy chain-dead one - skeletons get cut from the
+// beam before a leaf ever sees them. Safe-phase-only (always 0 in battle -
+// see LEGACY_GROWTH_PROFILE); widening the cheap-sorted slice by this many
+// extra candidates before re-ranking it by virtual-fire potential lets a
+// skeleton survive the cut. 0 = off.
+const DEFAULT_TEMPLATE_MID_REFINE = 12;
+const MAX_TEMPLATE_MID_REFINE = 24;
+
+const LEGACY_GROWTH_PROFILE = Object.freeze({
+  mainFireWeight: LEGACY_MAIN_FIRE_WEIGHT,
+  maxHeightPenalty: LEGACY_MAX_HEIGHT_PENALTY,
+  featureBlend: 0,
+  sampleCount: 0,
+  sampleDepth: DEFAULT_TEMPLATE_SAMPLE_DEPTH,
+  sampleBeam: DEFAULT_TEMPLATE_SAMPLE_BEAM,
+  sampleTopK: DEFAULT_TEMPLATE_SAMPLE_TOPK,
+  midRefine: 0,
+});
+
+function clampFeatureBlend(value) {
+  const parsed = Number.parseFloat(value);
+  const resolved = Number.isFinite(parsed) ? parsed : DEFAULT_FEATURE_BLEND;
+  return Math.max(0, Math.min(MAX_FEATURE_BLEND, resolved));
+}
+
+function clampIntSetting(value, min, max, defaultValue) {
+  const parsed = Number.parseInt(value, 10);
+  const resolved = Number.isFinite(parsed) ? parsed : defaultValue;
+  return Math.max(min, Math.min(max, resolved));
+}
 
 const TEMPLATE_LIBRARY = [
   { mask: [1, 1, 1, 1, 0, 0], profile: [0, 1, 2, 3, 0, 0], weight: 1.0 },
@@ -342,7 +435,7 @@ function colorBalance(fastBoard) {
   return 0.6 * (sorted[0] + sorted[1]) - 0.8 * (sorted[2] + sorted[3]);
 }
 
-function evaluateBoard(fastBoard) {
+function evaluateBoard(fastBoard, profile = LEGACY_GROWTH_PROFILE) {
   const heights = computeHeights(fastBoard);
   const holes = countHoles(fastBoard, heights);
   const maxHeight = Math.max(...heights);
@@ -357,7 +450,7 @@ function evaluateBoard(fastBoard) {
   s += groupBonuses(fastBoard);
   s -= holes * 38;
   s -= bumpiness * 10;
-  s -= maxHeight * 30;
+  s += maxHeight * profile.maxHeightPenalty;
   s -= dangerPenalty(fastBoard, heights);
 
   if (maxHeight >= 9) {
@@ -563,10 +656,117 @@ function virtualFireProbes(fastBoard) {
   return { mainProbe, subProbe, bestAttack };
 }
 
-function leafValue(fastBoard) {
-  const base = evaluateBoard(fastBoard);
+// 段階的重み調整: builds the active growth profile for this analyzeTemplateMove
+// call. Outside a safe position, this is exactly the legacy profile (bit-
+// identical behavior, featureBlend/sample settings included - sampleCount 0
+// there disables 改善3 entirely). In a safe position, mainFireWeight ramps
+// from 1.1 on an empty board down to 0.9 (legacy) as rootMaxHeight
+// approaches SAFE_MAIN_FIRE_HEIGHT_CAP, maxHeightPenalty is relaxed, and
+// featureBlend/sampleSettings carry the (already-clamped) settings.
+function buildGrowthProfile(safe, rootMaxHeight, featureBlend, sampleSettings, midRefine) {
+  if (!safe) {
+    return LEGACY_GROWTH_PROFILE;
+  }
+  const mainFireWeight =
+    LEGACY_MAIN_FIRE_WEIGHT +
+    (SAFE_MAIN_FIRE_WEIGHT_BONUS * Math.max(0, SAFE_MAIN_FIRE_HEIGHT_CAP - rootMaxHeight)) / SAFE_MAIN_FIRE_HEIGHT_CAP;
+  return { mainFireWeight, maxHeightPenalty: SAFE_MAX_HEIGHT_PENALTY, featureBlend, ...sampleSettings, midRefine };
+}
+
+function leafValue(fastBoard, profile = LEGACY_GROWTH_PROFILE) {
+  const base = evaluateBoard(fastBoard, profile);
   const { mainProbe, subProbe } = virtualFireProbes(fastBoard);
-  return base + 0.9 * mainProbe.value + SUB_FIRE_WEIGHT * (subProbe?.value ?? 0);
+  return base + profile.mainFireWeight * mainProbe.value + SUB_FIRE_WEIGHT * (subProbe?.value ?? 0);
+}
+
+// 改善3: a small level-synchronized beam over `pairs` (drawn deterministically
+// - see runLeafSamples), starting from `startBoard`, using the SAME node
+// semantics as the main search: fastResolveTurn per action; topout prunes
+// the branch; a fire banks chainOutcomeValue into the line's `shaped` and
+// continues (non-terminal, mirroring the main search's 攻撃タイミング判断-era
+// continuation). No simulateOjamaSettle call is needed here: sampling only
+// ever runs in the safe phase, where pendingOjama is 0 at the root and (per
+// the main search's own invariant - no *new* incoming attack is modeled
+// during lookahead) stays exactly 0 through the whole line, so there is
+// never anything to offset or drop. Returns null if every branch topped out
+// before the sample completed (a genuinely dead line, not a 0-value one).
+function runSampleContinuation(startBoard, pairs, profile) {
+  let frontier = [{ board: startBoard, shaped: 0 }];
+
+  for (let depth = 0; depth < pairs.length && frontier.length > 0; depth += 1) {
+    const { axis, child } = pairToCodes(pairs[depth]);
+    const expanded = [];
+
+    for (const parent of frontier) {
+      const actions = fastEnumerateLegalActions(parent.board, axis, child);
+      for (const action of actions) {
+        const result = fastResolveTurn(parent.board, axis, child, action);
+        if (result.topout) {
+          continue;
+        }
+
+        const firing = result.totalChains > 0;
+        const shaped = firing ? parent.shaped + chainOutcomeValue(result) : parent.shaped;
+        const evalValue = evaluateBoard(result.board, profile);
+        const quickValue = evalValue + chainOutcomeValue(result) * 0.01;
+        expanded.push({
+          board: result.board,
+          shaped,
+          sortValue: shaped + quickValue,
+          hash: fastBoardHash(result.board),
+        });
+      }
+    }
+
+    const bestByHash = new Map();
+    for (const entry of expanded) {
+      const existing = bestByHash.get(entry.hash);
+      if (!existing || entry.shaped > existing.shaped) {
+        bestByHash.set(entry.hash, entry);
+      }
+    }
+    const deduped = [...bestByHash.values()];
+    deduped.sort((a, b) => b.sortValue - a.sortValue);
+    frontier = deduped.slice(0, profile.sampleBeam);
+  }
+
+  if (frontier.length === 0) {
+    return null;
+  }
+
+  let best = -Infinity;
+  for (const entry of frontier) {
+    const value = entry.shaped + leafValue(entry.board, profile);
+    if (value > best) {
+      best = value;
+    }
+  }
+  return best;
+}
+
+// 改善3: averages runSampleContinuation over profile.sampleCount independent
+// samples (each its own deterministic rng, so re-analyzing the same position
+// always gives the same result), drawing profile.sampleDepth random pairs
+// per sample. Samples that topped out entirely are excluded from the
+// average rather than counted as 0 (a dead line isn't "worth nothing", it's
+// just not informative); returns null only if every sample died.
+function runLeafSamples(entryBoard, profile) {
+  const boardHash = fastBoardHash(entryBoard);
+  const outcomes = [];
+
+  for (let sampleIndex = 0; sampleIndex < profile.sampleCount; sampleIndex += 1) {
+    const rng = createRng(`${SAMPLE_RNG_SALT}:${boardHash}:${sampleIndex}`);
+    const pairs = Array.from({ length: profile.sampleDepth }, () => nextPair(rng));
+    const outcome = runSampleContinuation(entryBoard, pairs, profile);
+    if (outcome !== null) {
+      outcomes.push(outcome);
+    }
+  }
+
+  if (outcomes.length === 0) {
+    return null;
+  }
+  return outcomes.reduce((sum, outcome) => sum + outcome, 0) / outcomes.length;
 }
 
 function cloneRootAction(action) {
@@ -587,19 +787,45 @@ function updateRootBest(candidates, rootIndex, value) {
 // shaped + evaluateBoard score.
 const LEAF_FULL_EVAL_LIMIT = 8;
 
-function scoreLeafFrontier(candidates, leafFrontier, beamWidth) {
+function scoreLeafFrontier(candidates, leafFrontier, beamWidth, profile) {
   leafFrontier.sort((a, b) => (b.shaped + b.evalValue) - (a.shaped + a.evalValue));
   const fullEvalCount = Math.min(LEAF_FULL_EVAL_LIMIT, beamWidth);
 
   leafFrontier.forEach((entry, index) => {
+    const inFullEvalBand = index < fullEvalCount;
+
     // leafValue() runs its own fresh evaluateBoard() internally, so the
     // danger and opponent-threat penalties (already folded into the cheap
     // entry.evalValue) have to be re-added alongside it for the full-eval
-    // branch.
-    const value =
-      index < fullEvalCount
-        ? entry.shaped + leafValue(entry.board) + entry.pendingAfter * OJAMA_DANGER_PENALTY + entry.threatPenalty
-        : entry.shaped + entry.evalValue;
+    // branch. `leafPart` is kept around (rather than recomputed) since 改善3
+    // below needs the exact same value as the "static estimate" it replaces
+    // a weighted fraction of.
+    const leafPart = inFullEvalBand ? leafValue(entry.board, profile) : null;
+    let value = inFullEvalBand
+      ? entry.shaped + leafPart + entry.pendingAfter * OJAMA_DANGER_PENALTY + entry.threatPenalty
+      : entry.shaped + entry.evalValue;
+
+    // 改善2: v13 feature blend, only for the same top-8 band that already
+    // pays for the full leafValue() probe, and only when profile.
+    // featureBlend > 0 (always 0 outside the safe/growth phase), so battle
+    // phase and featureBlend: 0 never pay this extra cost.
+    if (inFullEvalBand && profile.featureBlend > 0) {
+      const features = extractBoardFeaturesFast(entry.board, { includeVirtualChains: true });
+      value += profile.featureBlend * scoreBoardFeatures(features, FEATURE_BLEND_PROFILE_ID);
+    }
+
+    // 改善3: sampled lookahead, only for the very top of the full-eval band
+    // (index < profile.sampleTopK) and only when profile.sampleCount > 0
+    // (always 0 outside the safe phase). The sampled continuation REPLACES a
+    // SAMPLE_GAIN_WEIGHT fraction of the static leafValue estimate
+    // (`leafPart`) with the deeper, sampled one - not a bonus stacked on top.
+    if (inFullEvalBand && index < profile.sampleTopK && profile.sampleCount > 0) {
+      const sampleOutcome = runLeafSamples(entry.board, profile);
+      if (sampleOutcome !== null) {
+        value += SAMPLE_GAIN_WEIGHT * (sampleOutcome - leafPart);
+      }
+    }
+
     updateRootBest(candidates, entry.rootIndex, value);
   });
 }
@@ -630,6 +856,12 @@ function scoreLeafFrontier(candidates, leafFrontier, beamWidth) {
 // 攻撃タイミング判断: `offenseMultiplier` scales a fire's outgoing-garbage bonus
 // (1 with no opponent read); `opponentFastBoard`/`opponentPendingOjama` (also
 // read once per call) feed the per-fire kill-detection bonus.
+//
+// 段階的重み調整: `settings.phaseAdaptive` (default true) gates a chain-growth
+// profile used only in a SAFE position (see buildGrowthProfile); when false,
+// or whenever the position isn't safe, `profile` is exactly LEGACY_GROWTH_
+// PROFILE and every score in this function is bit-identical to before phase
+// adaptivity existed.
 function runBeamSearch({
   board,
   currentPair,
@@ -642,7 +874,6 @@ function runBeamSearch({
   opponentPendingOjama = 0,
 }) {
   const pieces = [currentPair, ...nextQueue].slice(0, 3);
-  const beamWidth = clampBeamWidth(settings.templateBeamWidth);
   const fastRoot = fromLegacyBoard(board);
   const { axis, child } = pairToCodes(currentPair);
   const rootActions = fastEnumerateLegalActions(fastRoot, axis, child);
@@ -650,6 +881,32 @@ function runBeamSearch({
   const candidates = [];
   const isRootFinal = pieces.length === 1;
   const rootPending = Math.max(0, pendingOjama | 0);
+
+  // 段階的重み調整: computed once from the root board, used for the whole
+  // search (see the comment above the phase-adaptive constants for the
+  // "deeper boards may be taller by then" approximation this accepts).
+  const phaseAdaptive = settings.phaseAdaptive !== false;
+  const rootMaxHeight = Math.max(...fastColumnHeights(fastRoot));
+  const safe =
+    phaseAdaptive &&
+    rootPending === 0 &&
+    opponentThreat < SAFE_OPPONENT_THREAT_CEILING &&
+    rootMaxHeight <= SAFE_MAX_ROOT_HEIGHT;
+  const featureBlend = clampFeatureBlend(settings.featureBlend);
+  const sampleSettings = {
+    sampleCount: clampIntSetting(settings.templateSampleCount, 0, MAX_TEMPLATE_SAMPLE_COUNT, DEFAULT_TEMPLATE_SAMPLE_COUNT),
+    sampleDepth: clampIntSetting(settings.templateSampleDepth, 1, MAX_TEMPLATE_SAMPLE_DEPTH, DEFAULT_TEMPLATE_SAMPLE_DEPTH),
+    sampleBeam: clampIntSetting(settings.templateSampleBeam, MIN_TEMPLATE_SAMPLE_BEAM, MAX_TEMPLATE_SAMPLE_BEAM, DEFAULT_TEMPLATE_SAMPLE_BEAM),
+    sampleTopK: clampIntSetting(settings.templateSampleTopK, 1, MAX_TEMPLATE_SAMPLE_TOPK, DEFAULT_TEMPLATE_SAMPLE_TOPK),
+  };
+  const midRefine = clampIntSetting(settings.templateMidRefine, 0, MAX_TEMPLATE_MID_REFINE, DEFAULT_TEMPLATE_MID_REFINE);
+  const profile = buildGrowthProfile(safe, rootMaxHeight, featureBlend, sampleSettings, midRefine);
+  const phase = safe ? "safe" : "battle";
+
+  // 改善4 (adaptive beam width): computed after `safe` is known, so it must
+  // stay below the phase-adaptive block above.
+  const requestedBeamWidth = clampBeamWidth(settings.templateBeamWidth);
+  const beamWidth = safe ? Math.max(requestedBeamWidth, SAFE_MIN_BEAM_WIDTH) : requestedBeamWidth;
 
   let frontier = [];
   const leafFrontier = [];
@@ -692,7 +949,7 @@ function runBeamSearch({
     // chain's realized value is banked into `shaped` and the node continues,
     // so "fire a small counter chain now, keep the main chain for later" is
     // visible to the search. `banked` is 0 for a non-firing move.
-    const settledEval = evaluateBoard(settle.board);
+    const settledEval = evaluateBoard(settle.board, profile);
     const firing = result.totalChains > 0;
     const banked = firing
       ? chainOutcomeValue(result) +
@@ -746,7 +1003,7 @@ function runBeamSearch({
 
         // Same non-terminal-firing treatment as the root level (see above):
         // a fire banks its realized value into `shaped` and continues.
-        const settledEval = evaluateBoard(settle.board);
+        const settledEval = evaluateBoard(settle.board, profile);
         const firing = result.totalChains > 0;
         const banked = firing
           ? chainOutcomeValue(result) +
@@ -787,7 +1044,26 @@ function runBeamSearch({
     }
     const deduped = [...bestByHash.values()];
     deduped.sort((a, b) => b.sortValue - a.sortValue);
-    const survivors = deduped.slice(0, beamWidth);
+
+    // 改善5 (mid-search refine): re-rank the cheap-sorted slice by adding
+    // virtual-fire chain potential before cutting to beamWidth - makes "2
+    // plies from a big chain" outrank "tidy but chain-dead" during the
+    // search; leaf-only evaluation could not do this (measured). Ranking key
+    // only: refinedScore never gets written back onto the entry, so it can't
+    // leak into shaped/evalValue/sortValue or double-count against
+    // leafValue's own (freshly-computed) virtual fire probe later.
+    let survivors;
+    if (profile.midRefine > 0) {
+      const refineSlice = deduped.slice(0, beamWidth + profile.midRefine);
+      const refined = refineSlice.map((entry) => ({
+        entry,
+        refinedScore: entry.sortValue + profile.mainFireWeight * virtualFireProbes(entry.board).mainProbe.value,
+      }));
+      refined.sort((a, b) => b.refinedScore - a.refinedScore);
+      survivors = refined.slice(0, beamWidth).map((r) => r.entry);
+    } else {
+      survivors = deduped.slice(0, beamWidth);
+    }
 
     if (isFinalLevel) {
       for (const entry of survivors) {
@@ -812,7 +1088,7 @@ function runBeamSearch({
     }
   }
 
-  scoreLeafFrontier(candidates, leafFrontier, beamWidth);
+  scoreLeafFrontier(candidates, leafFrontier, beamWidth, profile);
 
   candidates.sort((a, b) => b.searchScore - a.searchScore);
 
@@ -821,13 +1097,30 @@ function runBeamSearch({
     bestScore: candidates[0]?.searchScore ?? -Infinity,
     candidates,
     expandedNodeCount: stats.expandedNodeCount,
+    phase,
   };
 }
 
-let openingState = { plan: null, movesUsed: 0, active: false };
+// Opening-book state is per battle-harness instance (settings.instanceId),
+// not a single module-level singleton, so two players sharing this module
+// (e.g. a self-play harness) don't corrupt each other's opening sequence.
+const openingStates = new Map();
 
-export function resetTemplateOpeningState() {
-  openingState = { plan: null, movesUsed: 0, active: false };
+function getOpeningState(instanceId) {
+  let state = openingStates.get(instanceId);
+  if (!state) {
+    state = { plan: null, movesUsed: 0, active: false };
+    openingStates.set(instanceId, state);
+  }
+  return state;
+}
+
+export function resetTemplateOpeningState(instanceId) {
+  if (instanceId === undefined) {
+    openingStates.clear();
+  } else {
+    openingStates.delete(instanceId);
+  }
 }
 
 function countOccupiedCells(board) {
@@ -868,6 +1161,7 @@ export function analyzeTemplateMove({
       candidateCount: 0,
       expandedNodeCount: 0,
       opponent: null,
+      phase: null,
       elapsedMs: performance.now() - startedAt,
     };
   }
@@ -900,10 +1194,13 @@ export function analyzeTemplateMove({
   // Fixed opening plans assume a quiet, garbage-free start; under incoming
   // pressure the beam search (which is battle-aware) should decide instead.
   const openingBookEligible = pendingOjama <= 0;
+  const instanceId = settings.instanceId ?? "default";
+  let openingState = getOpeningState(instanceId);
 
   if (openingBookEligible && isBoardEmpty(board) && nextQueue.length >= 2) {
     const plan = buildOpeningPlan([currentPair, nextQueue[0], nextQueue[1]]);
     openingState = { plan, movesUsed: 0, active: plan !== null };
+    openingStates.set(instanceId, openingState);
   }
 
   let openingAction = null;
@@ -984,6 +1281,7 @@ export function analyzeTemplateMove({
     candidateCount: candidates.length,
     expandedNodeCount: beamResult.expandedNodeCount,
     opponent: opponentResult,
+    phase: beamResult.phase,
     elapsedMs: performance.now() - startedAt,
   };
 }

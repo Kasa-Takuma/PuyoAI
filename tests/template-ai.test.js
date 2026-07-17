@@ -626,3 +626,469 @@ test("攻撃タイミング判断 invariance: opponent null still matches omitti
   assert.equal(withoutField.bestActionKey, withNull.bestActionKey);
   assert.equal(withoutField.bestScore, withNull.bestScore);
 });
+
+test("段階的重み調整: battle-mode invariance — pendingOjama keeps the search battle-ready regardless of phaseAdaptive", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = { axis: COLORS.RED, child: COLORS.GREEN };
+
+  const adaptive = analyzeTemplateMove({ board, currentPair, nextQueue: [], pendingOjama: 24 });
+  const legacy = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    pendingOjama: 24,
+    settings: { phaseAdaptive: false },
+  });
+
+  // pendingOjama > 0 makes the position unsafe regardless of phaseAdaptive,
+  // so both runs must land on the exact same battle-mode line.
+  assert.equal(adaptive.phase, "battle");
+  assert.equal(legacy.phase, "battle");
+  assert.equal(adaptive.bestActionKey, legacy.bestActionKey);
+  assert.equal(adaptive.bestScore, legacy.bestScore);
+});
+
+test("段階的重み調整: adaptive activity — a low, safe solo board scores differently with the growth profile", () => {
+  // Small ready fire (G, columns 0-2) plus an independent 2-cell G group
+  // (columns 4-5) that survives the fire; rootMaxHeight is 1, well within
+  // the safe threshold.
+  const board = boardFromRows(["GGG.RR"]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+
+  const adaptive = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+  const legacy = analyzeTemplateMove({ board, currentPair, nextQueue: [], settings: { phaseAdaptive: false } });
+
+  assert.equal(adaptive.phase, "safe");
+  assert.equal(legacy.phase, "battle");
+  assert.notEqual(adaptive.bestScore, legacy.bestScore);
+});
+
+test("段階的重み調整: growth behavior — patient in growth mode, cashes out in legacy mode", () => {
+  // A small ready fire (2 G's stacked at column 0) sits far from an isolated
+  // garbage cell (column 3) that keeps the board from fully clearing when
+  // fired. The current G,G piece can either complete that fire now, or be
+  // placed at column 2 - too far to touch the existing G's directly, but
+  // close enough that a *virtual* probe bridging columns 0-2 (plus the
+  // garbage-adjacency clear) reveals a big unrealized potential. Growth
+  // mode's slight overvaluation of standing potential tips the balance
+  // toward NOT firing; legacy mode cashes out immediately.
+  const board = boardFromRows(["G.....", "G..O.."]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+
+  // 改善3 (sampled lookahead) evolution: with sampling on (the new default),
+  // the search now samples PAST firing this line too and discovers enough
+  // downstream value there to prefer firing after all - a legitimately
+  // better-informed decision, not a bug. templateSampleCount: 0 isolates the
+  // original 段階的重み調整 behavior this test is about (mainFireWeight/
+  // maxHeightPenalty patience) from that newer mechanism.
+  const adaptive = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { templateSampleCount: 0 },
+  });
+  assert.equal(adaptive.phase, "safe");
+  const adaptiveResult = resolveTurn(board, currentPair, adaptive.bestAction);
+  assert.equal(adaptiveResult.totalChains, 0);
+
+  // Legacy mode's choice is reported for documentation only - no assertion
+  // on which action it picks, per the task's own guidance (it fires here,
+  // cashing out the same structure immediately).
+  resetTemplateOpeningState();
+  const legacy = analyzeTemplateMove({ board, currentPair, nextQueue: [], settings: { phaseAdaptive: false } });
+  assert.notEqual(legacy.bestAction, null);
+});
+
+test("段階的重み調整: opening state is isolated per settings.instanceId", () => {
+  const p1 = { axis: COLORS.RED, child: COLORS.RED };
+  const p2 = { axis: COLORS.RED, child: COLORS.GREEN };
+  const p3 = { axis: COLORS.RED, child: COLORS.BLUE };
+
+  let boardA = createEmptyBoard();
+  let boardB = createEmptyBoard();
+
+  // Interleave two "players" sharing this module, alternating instanceId,
+  // each running the same 3-pair opening from an empty board.
+  const a1 = analyzeTemplateMove({ board: boardA, currentPair: p1, nextQueue: [p2, p3], settings: { instanceId: "A" } });
+  const b1 = analyzeTemplateMove({ board: boardB, currentPair: p1, nextQueue: [p2, p3], settings: { instanceId: "B" } });
+  assert.equal(a1.opening, true);
+  assert.equal(b1.opening, true);
+  boardA = applyPlacement(boardA, p1, a1.bestAction).board;
+  boardB = applyPlacement(boardB, p1, b1.bestAction).board;
+
+  const a2 = analyzeTemplateMove({ board: boardA, currentPair: p2, nextQueue: [p3], settings: { instanceId: "A" } });
+  const b2 = analyzeTemplateMove({ board: boardB, currentPair: p2, nextQueue: [p3], settings: { instanceId: "B" } });
+  assert.equal(a2.opening, true);
+  assert.equal(b2.opening, true);
+  boardA = applyPlacement(boardA, p2, a2.bestAction).board;
+  boardB = applyPlacement(boardB, p2, b2.bestAction).board;
+
+  const a3 = analyzeTemplateMove({ board: boardA, currentPair: p3, nextQueue: [], settings: { instanceId: "A" } });
+  const b3 = analyzeTemplateMove({ board: boardB, currentPair: p3, nextQueue: [], settings: { instanceId: "B" } });
+  // Neither instance desynced despite the interleaving - both completed the
+  // full 3-move plan, matching the single-instance opening-book fixture.
+  assert.equal(a3.opening, true);
+  assert.equal(b3.opening, true);
+  assert.deepEqual(a3.bestAction, b3.bestAction);
+
+  resetTemplateOpeningState("A");
+  const afterResetA = analyzeTemplateMove({ board: createEmptyBoard(), currentPair: p1, nextQueue: [p2, p3], settings: { instanceId: "A" } });
+  assert.equal(afterResetA.opening, true);
+});
+
+test("改善2 (v13 feature blend): featureBlend 0 reproduces the pre-blend/pre-sampling baseline exactly", () => {
+  // Same fixture as the "growth behavior" test above. These exact numbers
+  // (bestAction, bestScore) were recorded from this codebase before the v13
+  // feature blend AND 改善3 (sampled lookahead) existed, so this is a direct
+  // regression guard: featureBlend must be a strict no-op when 0.
+  // templateSampleCount: 0 isolates that from 改善3's own (separately
+  // tested) effect - since sampling now defaults on, leaving it enabled here
+  // would also change this fixture's outcome for an unrelated reason. 改善4
+  // (adaptive beam width) doesn't need neutralizing: this fixture has no
+  // nextQueue, so the search never leaves the root level and beamWidth only
+  // ever caps scoreLeafFrontier's already-8-capped full-eval band.
+  const board = boardFromRows(["G.....", "G..O.."]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+
+  const analysis = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { featureBlend: 0, templateSampleCount: 0 },
+  });
+
+  assert.equal(analysis.phase, "safe");
+  assert.equal(analysis.bestActionKey, "UP:2");
+  assert.equal(analysis.bestScore, 300799.76666666666);
+});
+
+test("改善2 (v13 feature blend): explicit blend (8) changes the safe-phase score, and the default now matches featureBlend: 0", () => {
+  // DEFAULT_FEATURE_BLEND was flipped from 8 to 0 after measurement showed
+  // no solo/battle benefit on its own (the 3-ply main-search horizon was the
+  // real bottleneck, not the leaf's board-feature scoring) - the setting and
+  // machinery stay for a future retest alongside sampling.
+  const board = boardFromRows(["G.....", "G..O.."]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+  // With 改善3 (sampled lookahead) on by default, the OVERALL bestAction/
+  // bestScore on this fixture is now set by a firing candidate whose score
+  // comes from the pruning floor (unaffected by featureBlend - the blend
+  // only applies in scoreLeafFrontier's later pass, which the floor already
+  // exceeds here). UP:2's own candidate score is the one this file already
+  // established responds to featureBlend, so check that one directly rather
+  // than the possibly-floor-dominated overall bestScore.
+  const probeKey = encodeAction({ column: 2, orientation: "UP" });
+
+  const withExplicitBlend = analyzeTemplateMove({ board, currentPair, nextQueue: [], settings: { featureBlend: 8 } });
+  const withZeroBlend = analyzeTemplateMove({ board, currentPair, nextQueue: [], settings: { featureBlend: 0 } });
+  const withDefault = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+
+  const explicitScore = withExplicitBlend.candidates.find((c) => c.actionKey === probeKey).searchScore;
+  const zeroScore = withZeroBlend.candidates.find((c) => c.actionKey === probeKey).searchScore;
+  const defaultScore = withDefault.candidates.find((c) => c.actionKey === probeKey).searchScore;
+
+  assert.equal(withExplicitBlend.phase, "safe");
+  assert.notEqual(explicitScore, zeroScore);
+  assert.equal(withDefault.bestActionKey, withZeroBlend.bestActionKey);
+  assert.equal(withDefault.bestScore, withZeroBlend.bestScore);
+  assert.equal(defaultScore, zeroScore);
+});
+
+test("改善2 (v13 feature blend): battle phase is unaffected by featureBlend", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = { axis: COLORS.RED, child: COLORS.GREEN };
+
+  const withZeroBlend = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    pendingOjama: 24,
+    settings: { featureBlend: 0 },
+  });
+  const withBigBlend = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    pendingOjama: 24,
+    settings: { featureBlend: 32 },
+  });
+
+  // pendingOjama > 0 keeps this in battle phase regardless of featureBlend,
+  // where profile.featureBlend is always 0 - the setting must have zero
+  // effect here.
+  assert.equal(withZeroBlend.phase, "battle");
+  assert.equal(withBigBlend.phase, "battle");
+  assert.equal(withZeroBlend.bestActionKey, withBigBlend.bestActionKey);
+  assert.equal(withZeroBlend.bestScore, withBigBlend.bestScore);
+});
+
+// A "structural preference" test (two safe boards with an equal immediate
+// template score but a clearly better/worse v13-style chain skeleton) was
+// attempted but not included: the natural way to vary v13's chain-cascade
+// signal (e.g. recoloring one of two adjacent 3-groups) turned out to leave
+// bestVirtualChain unchanged, because the classic 2-step cascade mechanic is
+// color-agnostic - any two adjacent 3-groups of *any* two colors form the
+// same cascade geometry, so swapping the second group's color didn't remove
+// the structure it was meant to remove. Attempts to instead vary structural
+// properties like group liberties ran into the opposite problem: this file's
+// own template heuristics (seedScore/groupBonuses) already reward similar
+// group-size/liberty properties, so most changes shift both scores together
+// rather than isolating the v13-specific contribution. Skipping per the
+// task's guidance rather than shipping a flaky or accidentally-tautological
+// test; the three tests above already cover on/off, magnitude, and phase
+// isolation directly.
+
+test("改善3 (sampled lookahead): deterministic - the same safe fixture analyzed twice matches exactly", () => {
+  const board = boardFromRows(["G.....", "G..O.."]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+
+  resetTemplateOpeningState();
+  const first = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+  resetTemplateOpeningState();
+  const second = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+
+  assert.equal(first.phase, "safe");
+  assert.equal(first.bestActionKey, second.bestActionKey);
+  assert.equal(first.bestScore, second.bestScore);
+});
+
+test("改善3 (sampled lookahead): battle phase is unaffected by templateSampleCount", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = { axis: COLORS.RED, child: COLORS.GREEN };
+
+  const withSampling = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    pendingOjama: 24,
+    settings: { templateSampleCount: 4 },
+  });
+  const withoutSampling = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    pendingOjama: 24,
+    settings: { templateSampleCount: 0 },
+  });
+
+  // pendingOjama > 0 keeps this in battle phase regardless of
+  // templateSampleCount, where profile.sampleCount is always 0 - the
+  // setting must have zero effect here.
+  assert.equal(withSampling.phase, "battle");
+  assert.equal(withoutSampling.phase, "battle");
+  assert.equal(withSampling.bestActionKey, withoutSampling.bestActionKey);
+  assert.equal(withSampling.bestScore, withoutSampling.bestScore);
+});
+
+test("改善3 (sampled lookahead): sampling on scores higher than sampling off and flips the decision", () => {
+  // Same fixture as the "growth behavior" test above. With sampling off,
+  // firing the small ready chain (RIGHT:1) is worth less than patiently
+  // building (UP:2, the static leaf's pick). With sampling on, the search
+  // looks past the fire and finds enough downstream value there that firing
+  // wins instead - a decision flip, and a strictly higher bestScore too.
+  const board = boardFromRows(["G.....", "G..O.."]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+
+  const samplingOn = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+  const samplingOff = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { templateSampleCount: 0 },
+  });
+
+  assert.equal(samplingOn.phase, "safe");
+  assert.ok(samplingOn.bestScore > samplingOff.bestScore);
+  assert.notEqual(samplingOn.bestActionKey, samplingOff.bestActionKey);
+});
+
+test("改善5 (mid-search refine): templateMidRefine 0 reproduces the pre-改善5 baseline exactly", () => {
+  // This exact fixture/score pair (bestActionKey, bestScore) was recorded
+  // from this codebase before 改善5 (mid-search refine) existed - a direct
+  // regression guard, like the featureBlend-0 pin above. nextQueue has 2
+  // entries (3 pieces total) so the search's depth loop actually runs a
+  // non-final beam cut, the only place 改善5 can change anything; the safe
+  // phase (rootMaxHeight 2, no pressure) is where profile.midRefine is ever
+  // nonzero.
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "R.....",
+    "RG....",
+    "RGGB..",
+  ]);
+  const currentPair = { axis: COLORS.RED, child: COLORS.GREEN };
+  const nextQueue = [
+    { axis: COLORS.BLUE, child: COLORS.YELLOW },
+    { axis: COLORS.GREEN, child: COLORS.RED },
+  ];
+
+  const analysis = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { templateMidRefine: 0 },
+  });
+
+  assert.equal(analysis.phase, "safe");
+  assert.equal(analysis.bestActionKey, "UP:0");
+  assert.equal(analysis.bestScore, 223380.2063010609);
+});
+
+test("改善5 (mid-search refine): battle phase is unaffected by templateMidRefine", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "......",
+    "GGGRRR",
+  ]);
+  const currentPair = { axis: COLORS.RED, child: COLORS.GREEN };
+  const nextQueue = [
+    { axis: COLORS.BLUE, child: COLORS.YELLOW },
+    { axis: COLORS.GREEN, child: COLORS.RED },
+  ];
+
+  const withZeroRefine = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue,
+    pendingOjama: 24,
+    settings: { templateMidRefine: 0 },
+  });
+  const withMaxRefine = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue,
+    pendingOjama: 24,
+    settings: { templateMidRefine: 24 },
+  });
+
+  // pendingOjama > 0 keeps this in battle phase regardless of
+  // templateMidRefine, where profile.midRefine is always 0 (see LEGACY_
+  // GROWTH_PROFILE) - the setting must have zero effect here.
+  assert.equal(withZeroRefine.phase, "battle");
+  assert.equal(withMaxRefine.phase, "battle");
+  assert.equal(withZeroRefine.bestActionKey, withMaxRefine.bestActionKey);
+  assert.equal(withZeroRefine.bestScore, withMaxRefine.bestScore);
+  assert.deepEqual(withZeroRefine.candidates, withMaxRefine.candidates);
+});
+
+test("改善5 (mid-search refine): deterministic - the same safe fixture analyzed twice matches exactly", () => {
+  const board = boardFromRows([
+    "......",
+    "......",
+    "..B...",
+    "..B...",
+    "..YGG.",
+    "BBBYR.",
+  ]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+  const nextQueue = [
+    { axis: COLORS.GREEN, child: COLORS.RED },
+    { axis: COLORS.BLUE, child: COLORS.BLUE },
+  ];
+
+  resetTemplateOpeningState();
+  const first = analyzeTemplateMove({ board, currentPair, nextQueue });
+  resetTemplateOpeningState();
+  const second = analyzeTemplateMove({ board, currentPair, nextQueue });
+
+  assert.equal(first.phase, "safe");
+  assert.equal(first.bestActionKey, second.bestActionKey);
+  assert.equal(first.bestScore, second.bestScore);
+});
+
+test("改善5 (mid-search refine): skeleton survival - refining the mid-search beam by virtual-fire potential flips the decision", () => {
+  // Found via a scripted random search over safe fixtures (many random
+  // boards/queues were tried; this is the first one that produced a clean
+  // decision flip) rather than hand-built, since deliberately engineering a
+  // board where the cheap per-level sort (shaped + evalValue +
+  // chainOutcomeValue*0.01) discards a real skeleton candidate at the
+  // depth-1 cut, while also being the eventual overall winner once kept
+  // alive, turned out to depend on details of evaluateBoard/virtualFireProbes
+  // that are impractical to reason about by hand. Verified directly against
+  // this file's own depth-loop internals (temporary instrumentation, since
+  // removed) before writing this test: with templateMidRefine off, the
+  // eventual winner (UP:2, a candidate ranked ~5th by cheap sort at the
+  // depth-1 cut, sortValue ~3219) never even reaches the depth-1 survivors,
+  // which are dominated by a candidate under rootIndex 3 (sortValue
+  // ~34275); refining the top (beamWidth + midRefine) slice by virtual-fire
+  // potential promotes it back in, and it goes on to beat every other line.
+  const board = boardFromRows(["..B...", "..B...", "..YGG.", "BBBYR."]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.GREEN };
+  const nextQueue = [
+    { axis: COLORS.GREEN, child: COLORS.RED },
+    { axis: COLORS.BLUE, child: COLORS.BLUE },
+  ];
+
+  const refineOff = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { templateMidRefine: 0 },
+  });
+  const refineOn = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue,
+    settings: { templateMidRefine: 12 },
+  });
+
+  assert.equal(refineOff.phase, "safe");
+  assert.equal(refineOn.phase, "safe");
+  assert.notEqual(refineOff.bestActionKey, refineOn.bestActionKey);
+  assert.ok(refineOn.bestScore > refineOff.bestScore);
+});
