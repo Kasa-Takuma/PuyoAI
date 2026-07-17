@@ -1,4 +1,4 @@
-const CACHE_NAME = 'puyo-sim-v8';
+const CACHE_NAME = 'puyo-sim-v9';
 const urlsToCache = [
     './',
     './index.html',
