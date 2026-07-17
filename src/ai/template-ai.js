@@ -81,17 +81,14 @@ const OPPONENT_KILL_BONUS = 800000;
 // The phase is computed once per analyzeTemplateMove call from the ROOT
 // board and used for the whole search; boards reached deeper in the line
 // may in reality be taller by then — an accepted approximation.
-const LEGACY_MAIN_FIRE_WEIGHT = 0.9;
-const LEGACY_MAX_HEIGHT_PENALTY = -30;
-// Tall structured stacks are the point of chain building; the maxHeight>=9/
-// >=10 near-topout penalties in evaluateBoard stay unchanged as the real
-// guardrails regardless of phase.
-const SAFE_MAX_HEIGHT_PENALTY = -14;
-// Valuing the standing main chain slightly ABOVE its realized value makes
-// the search patient (it grows the chain instead of cashing it out); the
-// height decay (bonus shrinks to 0 by rootMaxHeight 9) guarantees it still
-// fires before the board gets dangerous.
-const SAFE_MAIN_FIRE_WEIGHT_BONUS = 0.2;
+// mainFireBase/maxHeightBattle/maxHeightSafe/safeFireBonus (see
+// DEFAULT_TEMPLATE_WEIGHTS below) hold the actual battle/safe values; the
+// maxHeight>=9/>=10 near-topout penalties in evaluateBoard stay unchanged as
+// the real guardrails regardless of phase. Valuing the standing main chain
+// slightly ABOVE its realized value (safeFireBonus) makes the search patient
+// (it grows the chain instead of cashing it out); the height decay (bonus
+// shrinks to 0 by rootMaxHeight 9) guarantees it still fires before the
+// board gets dangerous.
 const SAFE_MAIN_FIRE_HEIGHT_CAP = 9;
 const SAFE_MAX_ROOT_HEIGHT = 8;
 const SAFE_OPPONENT_THREAT_CEILING = 6;
@@ -124,10 +121,6 @@ const MAX_TEMPLATE_SAMPLE_BEAM = 8;
 const MIN_TEMPLATE_SAMPLE_BEAM = 2;
 const DEFAULT_TEMPLATE_SAMPLE_TOPK = 2;
 const MAX_TEMPLATE_SAMPLE_TOPK = 4;
-// The sampled continuation REPLACES (a weighted fraction of) the leaf's
-// static virtual-fire estimate rather than stacking on top of it - see the
-// precise blend formula in scoreLeafFrontier.
-const SAMPLE_GAIN_WEIGHT = 0.5;
 // Fixed salt for the sampling rng seed, alongside fastBoardHash(board) and
 // the sample index, so the same position always analyzes identically.
 const SAMPLE_RNG_SALT = "template-leaf-sample-v1";
@@ -142,15 +135,68 @@ const SAMPLE_RNG_SALT = "template-leaf-sample-v1";
 const DEFAULT_TEMPLATE_MID_REFINE = 12;
 const MAX_TEMPLATE_MID_REFINE = 24;
 
+// 改善6 (tunable evaluation weights): every scalar below was previously a
+// hardcoded multiplier/bonus inlined at its usage site (evaluateBoard,
+// colorBalance, leafValue, scoreLeafFrontier, buildGrowthProfile's
+// mainFireWeight formula). Collecting them here lets an outside tuner
+// (tools/evolve-template-weights.js) search this space via
+// settings.evalWeights without touching search/battle-only constants
+// (OJAMA_SENT_BONUS, kill/threat penalties, offense multipliers, etc. stay
+// fixed - those model fixed game rules, not tunable heuristics). Unlike
+// featureBlend/sampleCount/midRefine, these apply in BOTH phases:
+// evaluateBoard/leafValue run unconditionally regardless of safe/battle, so a
+// weight override affects both (maxHeightBattle/maxHeightSafe/safeFireBonus
+// are the only phase-specific entries here, exactly mirroring the old
+// LEGACY_*/SAFE_* split).
+export const DEFAULT_TEMPLATE_WEIGHTS = Object.freeze({
+  templateScore: 18,
+  seedScore: 10,
+  holePenalty: -38,
+  bumpiness: -10,
+  maxHeightBattle: -30,
+  maxHeightSafe: -14,
+  topPressure1: -120,
+  topPressure2: -260,
+  colorTop: 0.6,
+  colorBottom: -0.8,
+  mainFireBase: 0.9,
+  safeFireBonus: 0.2,
+  subFire: 0.35,
+  sampleGain: 0.5,
+});
+
+// Merges settings.evalWeights over the defaults, ignoring non-numeric/non-
+// finite entries so malformed overrides degrade to "no override" rather than
+// producing NaN scores. Returns the DEFAULT_TEMPLATE_WEIGHTS singleton itself
+// (same reference) when there's nothing valid to override, so
+// buildGrowthProfile's battle-phase fast path (see below) can stay bit-
+// identical to the pre-改善6 frozen LEGACY_GROWTH_PROFILE singleton.
+function mergeEvalWeights(overrides) {
+  if (!overrides || typeof overrides !== "object") {
+    return DEFAULT_TEMPLATE_WEIGHTS;
+  }
+  const merged = { ...DEFAULT_TEMPLATE_WEIGHTS };
+  let changed = false;
+  for (const key of Object.keys(DEFAULT_TEMPLATE_WEIGHTS)) {
+    const value = overrides[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      merged[key] = value;
+      changed = true;
+    }
+  }
+  return changed ? Object.freeze(merged) : DEFAULT_TEMPLATE_WEIGHTS;
+}
+
 const LEGACY_GROWTH_PROFILE = Object.freeze({
-  mainFireWeight: LEGACY_MAIN_FIRE_WEIGHT,
-  maxHeightPenalty: LEGACY_MAX_HEIGHT_PENALTY,
+  mainFireWeight: DEFAULT_TEMPLATE_WEIGHTS.mainFireBase,
+  maxHeightPenalty: DEFAULT_TEMPLATE_WEIGHTS.maxHeightBattle,
   featureBlend: 0,
   sampleCount: 0,
   sampleDepth: DEFAULT_TEMPLATE_SAMPLE_DEPTH,
   sampleBeam: DEFAULT_TEMPLATE_SAMPLE_BEAM,
   sampleTopK: DEFAULT_TEMPLATE_SAMPLE_TOPK,
   midRefine: 0,
+  weights: DEFAULT_TEMPLATE_WEIGHTS,
 });
 
 function clampFeatureBlend(value) {
@@ -418,7 +464,7 @@ function dangerPenalty(fastBoard, heights) {
   return penalty;
 }
 
-function colorBalance(fastBoard) {
+function colorBalance(fastBoard, weights) {
   const counts = new Map();
   for (const color of PLAYABLE_COLORS) {
     counts.set(colorToCode(color), 0);
@@ -432,10 +478,11 @@ function colorBalance(fastBoard) {
     }
   }
   const sorted = [...counts.values()].sort((a, b) => b - a);
-  return 0.6 * (sorted[0] + sorted[1]) - 0.8 * (sorted[2] + sorted[3]);
+  return weights.colorTop * (sorted[0] + sorted[1]) + weights.colorBottom * (sorted[2] + sorted[3]);
 }
 
 function evaluateBoard(fastBoard, profile = LEGACY_GROWTH_PROFILE) {
+  const weights = profile.weights;
   const heights = computeHeights(fastBoard);
   const holes = countHoles(fastBoard, heights);
   const maxHeight = Math.max(...heights);
@@ -445,22 +492,22 @@ function evaluateBoard(fastBoard, profile = LEGACY_GROWTH_PROFILE) {
   }
 
   let s = 0;
-  s += templateScore(heights) * 18;
-  s += seedScore(fastBoard) * 10;
+  s += templateScore(heights) * weights.templateScore;
+  s += seedScore(fastBoard) * weights.seedScore;
   s += groupBonuses(fastBoard);
-  s -= holes * 38;
-  s -= bumpiness * 10;
+  s += holes * weights.holePenalty;
+  s += bumpiness * weights.bumpiness;
   s += maxHeight * profile.maxHeightPenalty;
   s -= dangerPenalty(fastBoard, heights);
 
   if (maxHeight >= 9) {
-    s -= 120;
+    s += weights.topPressure1;
   }
   if (maxHeight >= 10) {
-    s -= 260;
+    s += weights.topPressure2;
   }
 
-  s += colorBalance(fastBoard);
+  s += colorBalance(fastBoard, weights);
 
   return s;
 }
@@ -603,8 +650,8 @@ function opponentKillBonus(settle, opponentFastBoard, opponentPendingOjama) {
 
 // 副砲 (sub-chain) weight: values a second, independent fire found during the
 // leaf probe below — i.e. counter-fire readiness while the main chain still
-// stands, distinct from (and lighter than) the main chain's own 0.9 weight.
-const SUB_FIRE_WEIGHT = 0.35;
+// stands, distinct from (and lighter than) the main chain's own mainFireBase
+// weight. See DEFAULT_TEMPLATE_WEIGHTS.subFire.
 
 // Faithful to puyoAI2's pseudoLeafScore: probes every column with a
 // monochrome PAIR (not a single puyo) of each playable color, dropped
@@ -659,24 +706,40 @@ function virtualFireProbes(fastBoard) {
 // 段階的重み調整: builds the active growth profile for this analyzeTemplateMove
 // call. Outside a safe position, this is exactly the legacy profile (bit-
 // identical behavior, featureBlend/sample settings included - sampleCount 0
-// there disables 改善3 entirely). In a safe position, mainFireWeight ramps
-// from 1.1 on an empty board down to 0.9 (legacy) as rootMaxHeight
-// approaches SAFE_MAIN_FIRE_HEIGHT_CAP, maxHeightPenalty is relaxed, and
-// featureBlend/sampleSettings carry the (already-clamped) settings.
-function buildGrowthProfile(safe, rootMaxHeight, featureBlend, sampleSettings, midRefine) {
+// there disables 改善3 entirely, and the weights fast path below keeps
+// referential identity with LEGACY_GROWTH_PROFILE when evalWeights has no
+// valid overrides). In a safe position, mainFireWeight ramps from
+// mainFireBase+safeFireBonus on an empty board down to mainFireBase (legacy)
+// as rootMaxHeight approaches SAFE_MAIN_FIRE_HEIGHT_CAP, maxHeightPenalty is
+// relaxed to maxHeightSafe, and featureBlend/sampleSettings carry the
+// (already-clamped) settings.
+function buildGrowthProfile(safe, rootMaxHeight, featureBlend, sampleSettings, midRefine, weights) {
   if (!safe) {
-    return LEGACY_GROWTH_PROFILE;
+    if (weights === DEFAULT_TEMPLATE_WEIGHTS) {
+      return LEGACY_GROWTH_PROFILE;
+    }
+    return {
+      mainFireWeight: weights.mainFireBase,
+      maxHeightPenalty: weights.maxHeightBattle,
+      featureBlend: 0,
+      sampleCount: 0,
+      sampleDepth: DEFAULT_TEMPLATE_SAMPLE_DEPTH,
+      sampleBeam: DEFAULT_TEMPLATE_SAMPLE_BEAM,
+      sampleTopK: DEFAULT_TEMPLATE_SAMPLE_TOPK,
+      midRefine: 0,
+      weights,
+    };
   }
   const mainFireWeight =
-    LEGACY_MAIN_FIRE_WEIGHT +
-    (SAFE_MAIN_FIRE_WEIGHT_BONUS * Math.max(0, SAFE_MAIN_FIRE_HEIGHT_CAP - rootMaxHeight)) / SAFE_MAIN_FIRE_HEIGHT_CAP;
-  return { mainFireWeight, maxHeightPenalty: SAFE_MAX_HEIGHT_PENALTY, featureBlend, ...sampleSettings, midRefine };
+    weights.mainFireBase +
+    (weights.safeFireBonus * Math.max(0, SAFE_MAIN_FIRE_HEIGHT_CAP - rootMaxHeight)) / SAFE_MAIN_FIRE_HEIGHT_CAP;
+  return { mainFireWeight, maxHeightPenalty: weights.maxHeightSafe, featureBlend, ...sampleSettings, midRefine, weights };
 }
 
 function leafValue(fastBoard, profile = LEGACY_GROWTH_PROFILE) {
   const base = evaluateBoard(fastBoard, profile);
   const { mainProbe, subProbe } = virtualFireProbes(fastBoard);
-  return base + profile.mainFireWeight * mainProbe.value + SUB_FIRE_WEIGHT * (subProbe?.value ?? 0);
+  return base + profile.mainFireWeight * mainProbe.value + profile.weights.subFire * (subProbe?.value ?? 0);
 }
 
 // 改善3: a small level-synchronized beam over `pairs` (drawn deterministically
@@ -817,12 +880,12 @@ function scoreLeafFrontier(candidates, leafFrontier, beamWidth, profile) {
     // 改善3: sampled lookahead, only for the very top of the full-eval band
     // (index < profile.sampleTopK) and only when profile.sampleCount > 0
     // (always 0 outside the safe phase). The sampled continuation REPLACES a
-    // SAMPLE_GAIN_WEIGHT fraction of the static leafValue estimate
+    // weights.sampleGain fraction of the static leafValue estimate
     // (`leafPart`) with the deeper, sampled one - not a bonus stacked on top.
     if (inFullEvalBand && index < profile.sampleTopK && profile.sampleCount > 0) {
       const sampleOutcome = runLeafSamples(entry.board, profile);
       if (sampleOutcome !== null) {
-        value += SAMPLE_GAIN_WEIGHT * (sampleOutcome - leafPart);
+        value += profile.weights.sampleGain * (sampleOutcome - leafPart);
       }
     }
 
@@ -900,7 +963,8 @@ function runBeamSearch({
     sampleTopK: clampIntSetting(settings.templateSampleTopK, 1, MAX_TEMPLATE_SAMPLE_TOPK, DEFAULT_TEMPLATE_SAMPLE_TOPK),
   };
   const midRefine = clampIntSetting(settings.templateMidRefine, 0, MAX_TEMPLATE_MID_REFINE, DEFAULT_TEMPLATE_MID_REFINE);
-  const profile = buildGrowthProfile(safe, rootMaxHeight, featureBlend, sampleSettings, midRefine);
+  const evalWeights = mergeEvalWeights(settings.evalWeights);
+  const profile = buildGrowthProfile(safe, rootMaxHeight, featureBlend, sampleSettings, midRefine, evalWeights);
   const phase = safe ? "safe" : "battle";
 
   // 改善4 (adaptive beam width): computed after `safe` is known, so it must

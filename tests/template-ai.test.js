@@ -1,7 +1,12 @@
 import test, { beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
-import { analyzeTemplateMove, resetTemplateOpeningState, simulateOjamaSettle } from "../src/ai/template-ai.js";
+import {
+  analyzeTemplateMove,
+  DEFAULT_TEMPLATE_WEIGHTS,
+  resetTemplateOpeningState,
+  simulateOjamaSettle,
+} from "../src/ai/template-ai.js";
 import { buildOpeningPlan } from "../src/ai/template-opening-book.js";
 import { applyPlacement, boardFromRows, createEmptyBoard, enumerateLegalActions, encodeAction } from "../src/core/board.js";
 import { COLORS } from "../src/core/constants.js";
@@ -1091,4 +1096,80 @@ test("改善5 (mid-search refine): skeleton survival - refining the mid-search b
   assert.equal(refineOn.phase, "safe");
   assert.notEqual(refineOff.bestActionKey, refineOn.bestActionKey);
   assert.ok(refineOn.bestScore > refineOff.bestScore);
+});
+
+test("改善6 (tunable evaluation weights): DEFAULT_TEMPLATE_WEIGHTS matches the previously-hardcoded scalars", () => {
+  // This is the actual regression guard for "no evalWeights = bit-identical
+  // behavior": if any of these ever drifted from the values this file's own
+  // pinned-score tests were recorded against (e.g. the featureBlend-0 and
+  // templateMidRefine-0 baselines above), those tests would fail first - this
+  // just documents the mapping directly.
+  assert.deepEqual(DEFAULT_TEMPLATE_WEIGHTS, {
+    templateScore: 18,
+    seedScore: 10,
+    holePenalty: -38,
+    bumpiness: -10,
+    maxHeightBattle: -30,
+    maxHeightSafe: -14,
+    topPressure1: -120,
+    topPressure2: -260,
+    colorTop: 0.6,
+    colorBottom: -0.8,
+    mainFireBase: 0.9,
+    safeFireBonus: 0.2,
+    subFire: 0.35,
+    sampleGain: 0.5,
+  });
+});
+
+test("改善6 (tunable evaluation weights): settings.evalWeights: {} is behaviorally identical to omitting it", () => {
+  const board = boardFromRows(["R.....", "......"]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.BLUE };
+
+  const withoutField = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+  const withEmpty = analyzeTemplateMove({ board, currentPair, nextQueue: [], settings: { evalWeights: {} } });
+
+  assert.equal(withoutField.bestActionKey, withEmpty.bestActionKey);
+  assert.equal(withoutField.bestScore, withEmpty.bestScore);
+});
+
+test("改善6 (tunable evaluation weights): an override changes bestScore on a fixture with a real hole", () => {
+  // Column 0 holds an R suspended above an empty cell - countHoles(...) sees
+  // exactly one hole here, so holePenalty (default -38) actually engages in
+  // evaluateBoard's `s += holes * weights.holePenalty` term.
+  const board = boardFromRows(["R.....", "......"]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.BLUE };
+
+  const withDefault = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+  const withOverride = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: { evalWeights: { holePenalty: -80 } },
+  });
+
+  assert.notEqual(withOverride.bestScore, withDefault.bestScore);
+});
+
+test("改善6 (tunable evaluation weights): non-finite/garbage evalWeights entries are ignored", () => {
+  const board = boardFromRows(["R.....", "......"]);
+  const currentPair = { axis: COLORS.GREEN, child: COLORS.BLUE };
+
+  const withDefault = analyzeTemplateMove({ board, currentPair, nextQueue: [] });
+  const withGarbage = analyzeTemplateMove({
+    board,
+    currentPair,
+    nextQueue: [],
+    settings: {
+      evalWeights: {
+        holePenalty: "not-a-number",
+        subFire: Infinity,
+        maxHeightSafe: NaN,
+        unknownWeightKey: 12345,
+      },
+    },
+  });
+
+  assert.equal(withGarbage.bestActionKey, withDefault.bestActionKey);
+  assert.equal(withGarbage.bestScore, withDefault.bestScore);
 });
