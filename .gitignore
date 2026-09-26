@@ -8,3 +8,7 @@ models/*
 !models/manifest.json
 log/
 puyoai-search-*.json
+training/solo_search/artifacts/
+training/solo_search/kaggle/output/
+training/solo_search/kaggle/evaluation-dataset/
+training/solo_search/kaggle/evaluation-kernel/

@@ -1,4 +1,4 @@
-const CACHE_NAME = "puyoai-shell-v36";
+const CACHE_NAME = "puyoai-shell-v38";
 
 const APP_SHELL = [
   "./",
@@ -15,20 +15,25 @@ const APP_SHELL = [
   "./src/core/constants.js",
   "./src/core/board.js",
   "./src/core/engine.js",
+  "./src/core/fast-board.js",
   "./src/core/presets.js",
   "./src/core/randomizer.js",
   "./src/ai/features.js",
   "./src/ai/action-vocab.js",
+  "./src/ai/features-fast.js",
   "./src/ai/learned.js",
   "./src/ai/value.js",
   "./src/ai/search-profiles.js",
   "./src/ai/search.js",
+  "./src/ai/solo-search.js",
+  "./src/ai/solo-value.js",
   "./src/ai/dataset.js",
   "./src/ppsim2/adapter.js",
   "./src/ppsim2/v12-controller.js",
   "./models/manifest.json",
   "./models/policy_mlp.web.json",
   "./models/value_mlp.web.json",
+  "./models/solo_value.web.json",
   "./src/worker/ai-worker.js",
   "./src/worker/batch-worker.js",
   "./ppsim2/",

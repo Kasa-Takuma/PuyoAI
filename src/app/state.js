@@ -56,6 +56,10 @@ function normalizeAiSettings(aiSettings) {
       4,
       Math.min(96, Number.parseInt(aiSettings?.beamWidth, 10) || 24),
     ),
+    soloBeamWidth: Math.max(
+      22,
+      Math.min(64, Number.parseInt(aiSettings?.soloBeamWidth, 10) || 22),
+    ),
     searchProfile:
       typeof aiSettings?.searchProfile === "string" && aiSettings.searchProfile.length > 0
         ? aiSettings.searchProfile
@@ -87,7 +91,7 @@ function normalizeAiSettings(aiSettings) {
 }
 
 function normalizeAiMode(aiMode) {
-  return aiMode === "learned" ? "learned" : "search";
+  return aiMode === "learned" || aiMode === "solo" ? aiMode : "search";
 }
 
 function normalizeLearnedModels(learnedModels) {

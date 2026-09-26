@@ -78,6 +78,14 @@
                 </div>
             </div>
 
+            <div id="solo-ai-settings" style="display: none;">
+                <div style="margin: 20px 0; text-align: left;">
+                    <label for="ai-solo-beam-width-select" style="display: block; font-size: 0.9em; color: #ccc; margin-bottom: 10px;">Solo Search Beam Width</label>
+                    <select id="ai-solo-beam-width-select" onchange="setPuyoAISoloBeamWidth(this.value)" style="width: 100%; padding: 10px; background: #222; color: white; border: 1px solid #444; border-radius: 5px;"></select>
+                    <p style="font-size: 0.75em; line-height: 1.5; color: #aaa; margin: 8px 0 0;">新系統の深さ3探索です。幅が大きいほど大連鎖の候補を残しやすくなりますが、思考時間が増えます。</p>
+                </div>
+            </div>
+
             <div id="template-ai-settings" style="display: none;">
                 <div style="margin: 20px 0; text-align: left;">
                     <label for="ai-template-beam-width-select" style="display: block; font-size: 0.9em; color: #ccc; margin-bottom: 10px;">テンプレAI Beam Width</label>

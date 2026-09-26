@@ -1,6 +1,8 @@
 import { createDatasetFilename, serializeAiDataset } from "../ai/dataset.js";
 import { analyzeLearnedMove, loadLearnedModelManifest } from "../ai/learned.js";
 import { searchBestMove } from "../ai/search.js";
+import { searchSoloMove } from "../ai/solo-search.js";
+import { loadSoloValueModel } from "../ai/solo-value.js";
 import { loadSearchValueModel } from "../ai/value.js";
 import { renderApp } from "./render.js";
 import {
@@ -18,6 +20,7 @@ import {
   setLearnedModels,
   setAiError,
   setAiSetting,
+  setAiMode,
   setAiStatus,
   setSelectedAction,
   startReplay,
@@ -28,6 +31,7 @@ import {
 const VIEWER_AI_SETTINGS = Object.freeze({
   depth: 3,
   beamWidth: 48,
+  soloBeamWidth: 22,
   searchProfile: "chain_builder_v13",
   dedupe: true,
   sampleCount: 8,
@@ -132,7 +136,11 @@ function finalizeAiAnalysis(requestId, analysis) {
     applyAction(
       state,
       analysis.bestAction,
-      analysis.kind === "learned" ? "learned" : "ai",
+      analysis.kind === "learned"
+        ? "learned"
+        : analysis.kind === "solo-search"
+          ? "solo"
+          : "ai",
     );
   }
 
@@ -199,11 +207,22 @@ function requestAiAnalysis({ applyMove = false, autoRun = false } = {}) {
       const work =
         payload.mode === "learned"
           ? analyzeLearnedMove(payload)
-          : payload.settings?.useValueModel
-            ? loadSearchValueModel().then((valueModel) =>
-                searchBestMove({ ...payload, valueModel }),
+          : payload.mode === "solo"
+            ? loadSoloValueModel().then((model) =>
+                searchSoloMove({
+                  ...payload,
+                  settings: {
+                    ...payload.settings,
+                    beamWidth: payload.settings?.soloBeamWidth ?? 22,
+                  },
+                  model,
+                }),
               )
-            : Promise.resolve(searchBestMove(payload));
+            : payload.settings?.useValueModel
+              ? loadSearchValueModel().then((valueModel) =>
+                  searchBestMove({ ...payload, valueModel }),
+                )
+              : Promise.resolve(searchBestMove(payload));
       work
         .then((analysis) => {
           finalizeAiAnalysis(requestId, analysis);
@@ -270,6 +289,11 @@ function stopAiLoop() {
 }
 
 function bindEvents() {
+  document.querySelector("#ai-mode")?.addEventListener("change", (event) => {
+    setAiMode(state, event.target.value);
+    rerender();
+  });
+
   document.querySelector("#preset-select")?.addEventListener("change", () => {
     rebuildStateFromControls();
     rerender();

@@ -76,6 +76,8 @@ function sourceLabel(source) {
   switch (source) {
     case "learned":
       return "Learned";
+    case "solo":
+      return "Solo Search";
     case "ai":
       return "AI";
     case "random":
@@ -86,7 +88,9 @@ function sourceLabel(source) {
 }
 
 function aiModeLabel(aiMode) {
-  return aiMode === "learned" ? "Learned AI" : "Search AI";
+  if (aiMode === "learned") return "Learned AI";
+  if (aiMode === "solo") return "Solo Search";
+  return "Search AI";
 }
 
 function valueAssistLabel(state) {
@@ -171,6 +175,33 @@ function candidateMarkup(analysis) {
                   <strong>${actionLabel(candidate.action)}</strong>
                   <span>確率 ${(candidate.probability * 100).toFixed(2)}%</span>
                   <span>logit ${candidate.logit.toFixed(3)}</span>
+                </div>
+              </li>
+            `,
+          )
+          .join("")}
+      </ol>
+    `;
+  }
+
+  if (analysis.kind === "solo-search") {
+    return `
+      <ol class="candidate-list">
+        ${analysis.candidates
+          .slice(0, 5)
+          .map(
+            (candidate, index) => `
+              <li class="candidate-item ${
+                candidate.actionKey === analysis.bestActionKey ? "best" : ""
+              }">
+                <div class="candidate-rank">#${index + 1}</div>
+                <div class="candidate-body">
+                  <strong>${actionLabel(candidate.action)}</strong>
+                  <span>探索値 ${candidate.searchScore.toFixed(3)} / 累積報酬 ${candidate.cumulativeReward.toFixed(3)}</span>
+                  <span>将来価値 ${candidate.predictedValue.toFixed(3)} / 128手以内の死亡予測 ${(candidate.deathProbability * 100).toFixed(1)}%</span>
+                  <span>line: ${candidate.line
+                    .map((action) => `${action.orientation}:${action.column + 1}`)
+                    .join(" -> ")}</span>
                 </div>
               </li>
             `,
@@ -316,7 +347,7 @@ export function renderApp(root, state) {
     .join("");
   const aiBusyDisabled = state.aiBusy ? "disabled" : "";
   const aiSettingsDisabled =
-    state.aiBusy || state.aiMode === "learned" ? "disabled" : "";
+    state.aiBusy || state.aiMode !== "search" ? "disabled" : "";
   const selectableSearchProfiles = SEARCH_PROFILES.filter(isSelectableSearchProfile);
   const currentSearchProfile = SEARCH_PROFILES.find(
     (profile) => profile.id === state.aiSettings.searchProfile,
@@ -424,6 +455,15 @@ export function renderApp(root, state) {
           </div>
 
           <div class="control-grid ai-grid">
+            <label class="field wide">
+              <span>AI Engine</span>
+              <select id="ai-mode" ${aiBusyDisabled}>
+                <option value="search" ${state.aiMode === "search" ? "selected" : ""}>Search v-series</option>
+                <option value="solo" ${state.aiMode === "solo" ? "selected" : ""}>Solo Search</option>
+                <option value="learned" ${state.aiMode === "learned" ? "selected" : ""}>Learned Policy</option>
+              </select>
+            </label>
+
             <label class="field wide">
               <span>Search Profile</span>
               <select id="ai-search-profile" ${aiSettingsDisabled}>

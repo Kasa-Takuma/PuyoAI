@@ -1,0 +1,16 @@
+{
+  "id": "ikakun624/puyoai-v12ac-gpu-evolution",
+  "title": "PuyoAI v12AC GPU Evolution",
+  "code_file": "evolve-kernel.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "dataset_sources": [
+    "ikakun624/puyoai-v12ac-gpu-evolution-source"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

@@ -1,4 +1,6 @@
 import { SEARCH_PROFILES, searchBestMove } from "../ai/search.js";
+import { searchSoloMove } from "../ai/solo-search.js";
+import { loadSoloValueModel } from "../ai/solo-value.js";
 import { analyzeTemplateMove } from "../ai/template-ai.js";
 import {
   convertActionToPpsimPlacement,
@@ -11,23 +13,27 @@ import {
 const PROFILE_STORAGE_KEY = "puyoai.ppsim2.searchProfile";
 const DEPTH_STORAGE_KEY = "puyoai.ppsim2.depth";
 const BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.beamWidth";
+const SOLO_BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.soloBeamWidth";
 const SAMPLING_STORAGE_KEY = "puyoai.ppsim2.sampling";
 const FAST_AUTO_STORAGE_KEY = "puyoai.ppsim2.fastAuto";
 const ENGINE_STORAGE_KEY = "puyoai.ppsim2.aiEngine";
 const TEMPLATE_BEAM_WIDTH_STORAGE_KEY = "puyoai.ppsim2.templateBeamWidth";
 const AI_ENGINES = Object.freeze([
   { id: "search", label: "探索AI" },
+  { id: "solo", label: "Solo Search" },
   { id: "template", label: "テンプレAI" },
 ]);
 const DEFAULT_AI_ENGINE = "search";
 const DEFAULT_PROFILE_ID = "chain_builder_v13";
 const DEFAULT_DEPTH = 3;
 const DEFAULT_BEAM_WIDTH = 48;
+const DEFAULT_SOLO_BEAM_WIDTH = 22;
 const DEFAULT_TEMPLATE_BEAM_WIDTH = 14;
 const DEFAULT_SAMPLING_ENABLED = true;
 const MAX_SEARCH_DEPTH = 51;
 const MAX_INTERNAL_NEXT_PAIRS = MAX_SEARCH_DEPTH - 1;
 const BEAM_WIDTH_OPTIONS = Object.freeze([12, 16, 24, 36, 48, 72, 96]);
+const SOLO_BEAM_WIDTH_OPTIONS = Object.freeze([22, 32, 48, 64]);
 const TEMPLATE_BEAM_WIDTH_OPTIONS = Object.freeze([8, 14, 24, 32, 48]);
 const SAMPLING_SETTINGS = Object.freeze({
   sampleCount: 8,
@@ -39,6 +45,7 @@ const SAMPLING_SETTINGS = Object.freeze({
 const SEARCH_SETTINGS = {
   depth: DEFAULT_DEPTH,
   beamWidth: DEFAULT_BEAM_WIDTH,
+  soloBeamWidth: DEFAULT_SOLO_BEAM_WIDTH,
   searchProfile: DEFAULT_PROFILE_ID,
   dedupe: true,
   sampleCount: 0,
@@ -58,6 +65,7 @@ let samplingEnabled = DEFAULT_SAMPLING_ENABLED;
 let fastAutoEnabled = false;
 let aiEngine = DEFAULT_AI_ENGINE;
 let templateBeamWidth = DEFAULT_TEMPLATE_BEAM_WIDTH;
+let soloBeamWidth = DEFAULT_SOLO_BEAM_WIDTH;
 
 class MovementError extends Error {
   constructor(message, phase) {
@@ -172,6 +180,9 @@ function getActiveProfile() {
 }
 
 function getActiveProfileLabel() {
+  if (aiEngine === "solo") {
+    return "Solo Search";
+  }
   if (aiEngine === "template") {
     return "Template";
   }
@@ -252,7 +263,11 @@ function renderAiEngineSelect() {
 function updateEngineSettingsVisibility() {
   const searchSettings = document.getElementById("search-ai-settings");
   if (searchSettings) {
-    searchSettings.style.display = aiEngine === "template" ? "none" : "";
+    searchSettings.style.display = aiEngine === "search" ? "" : "none";
+  }
+  const soloSettings = document.getElementById("solo-ai-settings");
+  if (soloSettings) {
+    soloSettings.style.display = aiEngine === "solo" ? "" : "none";
   }
   const templateSettings = document.getElementById("template-ai-settings");
   if (templateSettings) {
@@ -337,6 +352,22 @@ function renderSearchSettingInputs() {
   updateSearchSettingsDescription();
 }
 
+function renderSoloSettings() {
+  const select = document.getElementById("ai-solo-beam-width-select");
+  if (!select) {
+    return;
+  }
+
+  select.innerHTML = "";
+  for (const beamWidth of SOLO_BEAM_WIDTH_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = String(beamWidth);
+    option.textContent = String(beamWidth);
+    select.appendChild(option);
+  }
+  select.value = String(soloBeamWidth);
+}
+
 function renderTemplateBeamWidthSelect() {
   const select = document.getElementById("ai-template-beam-width-select");
   if (!select) {
@@ -373,6 +404,21 @@ function setBeamWidth(beamWidth) {
   }
   updateSearchSettingsDescription();
   aiStatus(`AI Beam Width ${SEARCH_SETTINGS.beamWidth} に変更しました`);
+}
+
+function normalizeSoloBeamWidth(beamWidth) {
+  const parsed = Number.parseInt(beamWidth, 10);
+  return SOLO_BEAM_WIDTH_OPTIONS.includes(parsed) ? parsed : DEFAULT_SOLO_BEAM_WIDTH;
+}
+
+function setSoloBeamWidth(beamWidth) {
+  soloBeamWidth = normalizeSoloBeamWidth(beamWidth);
+  storeNumber(SOLO_BEAM_WIDTH_STORAGE_KEY, soloBeamWidth);
+  const select = document.getElementById("ai-solo-beam-width-select");
+  if (select && select.value !== String(soloBeamWidth)) {
+    select.value = String(soloBeamWidth);
+  }
+  aiStatus(`Solo Search Beam Width ${soloBeamWidth} に変更しました`);
 }
 
 function setTemplateBeamWidth(beamWidth) {
@@ -438,7 +484,7 @@ function buildSearchPayload() {
     typeof window.getBoardSnapshot === "function" ? window.getBoardSnapshot() : null;
   const currentPair = convertCurrentPair(getCurrentPuyo());
   const requiredNextPairs =
-    aiEngine === "template"
+    aiEngine === "solo" || aiEngine === "template"
       ? 2
       : Math.min(MAX_INTERNAL_NEXT_PAIRS, Math.max(0, SEARCH_SETTINGS.depth - 1));
   const nextQueue = convertNextQueue(
@@ -465,7 +511,7 @@ function buildSearchPayload() {
     board: convertBoard(ppsimBoard),
     currentPair,
     nextQueue,
-    settings: { ...SEARCH_SETTINGS, templateBeamWidth },
+    settings: { ...SEARCH_SETTINGS, soloBeamWidth, templateBeamWidth },
     pendingOjama: typeof window.getPendingOjama === "function" ? (window.getPendingOjama() | 0) : 0,
     opponent,
   };
@@ -694,7 +740,18 @@ async function runPuyoAIInternal() {
   aiStatus(`PuyoAI ${getActiveProfileLabel()} 思考中...`);
 
   try {
-    const analysis = aiEngine === "template" ? analyzeTemplateMove(payload) : searchBestMove(payload);
+    const analysis =
+      aiEngine === "solo"
+        ? await loadSoloValueModel().then((model) =>
+            searchSoloMove({
+              ...payload,
+              settings: { ...payload.settings, beamWidth: soloBeamWidth },
+              model,
+            }),
+          )
+        : aiEngine === "template"
+          ? analyzeTemplateMove(payload)
+          : searchBestMove(payload);
     const applied = await applyReachableCandidate(analysis);
     const chains = applied.candidate?.immediateChains ?? 0;
     const fallbackText =
@@ -796,6 +853,10 @@ window.setPuyoAIBeamWidth = function setPuyoAIBeamWidth(beamWidth) {
   setBeamWidth(beamWidth);
 };
 
+window.setPuyoAISoloBeamWidth = function setPuyoAISoloBeamWidth(beamWidth) {
+  setSoloBeamWidth(beamWidth);
+};
+
 window.setPuyoAITemplateBeamWidth = function setPuyoAITemplateBeamWidth(beamWidth) {
   setTemplateBeamWidth(beamWidth);
 };
@@ -829,6 +890,7 @@ function initializeAiControls() {
   SEARCH_SETTINGS.searchProfile = normalizeProfileId(getStoredProfileId());
   SEARCH_SETTINGS.depth = normalizeDepth(getStoredNumber(DEPTH_STORAGE_KEY));
   SEARCH_SETTINGS.beamWidth = normalizeBeamWidth(getStoredNumber(BEAM_WIDTH_STORAGE_KEY));
+  soloBeamWidth = normalizeSoloBeamWidth(getStoredNumber(SOLO_BEAM_WIDTH_STORAGE_KEY));
   templateBeamWidth = normalizeTemplateBeamWidth(getStoredNumber(TEMPLATE_BEAM_WIDTH_STORAGE_KEY));
   samplingEnabled = getStoredFlag(SAMPLING_STORAGE_KEY, DEFAULT_SAMPLING_ENABLED);
   fastAutoEnabled = getStoredFlag(FAST_AUTO_STORAGE_KEY, false);
@@ -836,6 +898,7 @@ function initializeAiControls() {
   renderAiEngineSelect();
   renderProfileSelect();
   renderSearchSettingInputs();
+  renderSoloSettings();
   renderTemplateBeamWidthSelect();
   updateEngineSettingsVisibility();
   setAutoButton(false);

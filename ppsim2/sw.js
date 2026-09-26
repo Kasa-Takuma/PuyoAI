@@ -7,6 +7,7 @@ const urlsToCache = [
     './online.js',
     './puyoSim.js',
     './puyoAI.js',
+    '../models/solo_value.web.json',
     './manifest.json',
     './apple-touch-icon.png',
     './android-icon-192x192.png',

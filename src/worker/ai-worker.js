@@ -1,5 +1,7 @@
 import { analyzeLearnedMove } from "../ai/learned.js";
 import { searchBestMove } from "../ai/search.js";
+import { searchSoloMove } from "../ai/solo-search.js";
+import { loadSoloValueModel } from "../ai/solo-value.js";
 import { loadSearchValueModel } from "../ai/value.js";
 
 async function analyzeSearchMove(payload) {
@@ -14,6 +16,18 @@ async function analyzeSearchMove(payload) {
   });
 }
 
+async function analyzeSoloMove(payload) {
+  const model = await loadSoloValueModel();
+  return searchSoloMove({
+    ...payload,
+    settings: {
+      ...payload.settings,
+      beamWidth: payload.settings?.soloBeamWidth ?? 22,
+    },
+    model,
+  });
+}
+
 self.addEventListener("message", (event) => {
   const { type, requestId, payload } = event.data ?? {};
 
@@ -24,7 +38,9 @@ self.addEventListener("message", (event) => {
   const work =
     payload?.mode === "learned"
       ? analyzeLearnedMove(payload)
-      : analyzeSearchMove(payload);
+      : payload?.mode === "solo"
+        ? analyzeSoloMove(payload)
+        : analyzeSearchMove(payload);
 
   work
     .then((analysis) => {
