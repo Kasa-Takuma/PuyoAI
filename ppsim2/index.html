@@ -126,6 +126,31 @@
                     </div>
                 </div>
 
+                <section id="performance-stats" class="info-box" aria-labelledby="performance-stats-title">
+                    <div class="performance-stats-heading">
+                        <h2 id="performance-stats-title">プレイ記録</h2>
+                        <span>発火した連鎖で集計</span>
+                    </div>
+                    <div class="performance-stats-grid">
+                        <div class="performance-stat">
+                            <span class="performance-stat-label">平均連鎖</span>
+                            <strong id="average-chain-stat">0.0</strong>
+                        </div>
+                        <div class="performance-stat">
+                            <span class="performance-stat-label">最大連鎖</span>
+                            <strong id="max-chain-stat">0</strong>
+                        </div>
+                        <div class="performance-stat">
+                            <span class="performance-stat-label">発火回数</span>
+                            <strong id="chain-fire-stat">0</strong>
+                        </div>
+                        <div class="performance-stat">
+                            <span class="performance-stat-label">手数</span>
+                            <strong id="move-count-stat">0</strong>
+                        </div>
+                    </div>
+                </section>
+
                 <div id="history-controls" class="common-control">
                     <button id="undo-button" onclick="undoMove()" disabled>一手戻す (U)</button>
                     <button id="redo-button" onclick="redoMove()" disabled>一手やり直す (Y)</button>

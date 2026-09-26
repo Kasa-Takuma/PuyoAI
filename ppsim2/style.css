@@ -164,6 +164,63 @@ body {
     color: #ccc;
 }
 
+#performance-stats {
+    padding: 8px;
+}
+
+.performance-stats-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 7px;
+    text-align: left;
+}
+
+.performance-stats-heading h2 {
+    margin: 0;
+    color: #fff;
+}
+
+.performance-stats-heading span {
+    color: #999;
+    font-size: 0.62em;
+    white-space: nowrap;
+}
+
+.performance-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+}
+
+.performance-stat {
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 6px 8px;
+    border: 1px solid #4d4d4d;
+    border-radius: 6px;
+    background: #292929;
+    box-sizing: border-box;
+}
+
+.performance-stat-label {
+    color: #aaa;
+    font-size: 0.68em;
+    line-height: 1.2;
+}
+
+.performance-stat strong {
+    color: #f4a261;
+    font-size: 1.15em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
+}
+
 .small-text {
   font-size: 8px;
   color: #666666;
@@ -517,4 +574,61 @@ body.board-gameover #puyo-board .puyo::after {
     font-weight: bold;
     opacity: 0.85;
     pointer-events: none;
+}
+
+/* タブレットでは盤面と情報を横に並べ、操作項目を2列にまとめる */
+@media (min-width: 700px) {
+    body {
+        padding: 16px;
+    }
+
+    #wrapper {
+        max-width: 980px;
+        gap: 16px;
+        padding: 16px;
+    }
+
+    #puyo-board {
+        --puyo-cell-size: clamp(40px, 5.4vw, 48px);
+    }
+
+    #info-panel {
+        max-width: 380px;
+        max-height: calc(100dvh - 32px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    #play-info-container {
+        gap: 8px;
+    }
+
+    #play-stats-info {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 5px;
+    }
+
+    #play-controls {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    #play-controls > * {
+        margin-top: 0 !important;
+    }
+
+    #play-controls button,
+    #history-controls button,
+    #raise-puyo-button {
+        min-height: 44px;
+        touch-action: manipulation;
+    }
+
+    #ai-status {
+        grid-column: 1 / -1;
+        min-height: auto;
+    }
 }

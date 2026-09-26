@@ -56,6 +56,7 @@ let queueIndex = 0;
 
 let score = 0;
 let chainCount = 0;
+let playStats = createEmptyPlayStats();
 let gameState = 'playing'; // 'playing', 'chaining', 'gameover', 'editing', 'setting'
 let currentEditColor = COLORS.EMPTY;
 let editingNextPuyos = [];
@@ -94,6 +95,31 @@ function copyBoard(srcBoard) {
 
 function copyNextQueue(srcQueue) {
     return srcQueue.map(pair => pair.slice());
+}
+
+function createEmptyPlayStats() {
+    return {
+        moveCount: 0,
+        chainFireCount: 0,
+        totalChainCount: 0,
+        maxChainCount: 0
+    };
+}
+
+function copyPlayStats(stats) {
+    return {
+        moveCount: stats.moveCount,
+        chainFireCount: stats.chainFireCount,
+        totalChainCount: stats.totalChainCount,
+        maxChainCount: stats.maxChainCount
+    };
+}
+
+function recordCompletedChain() {
+    if (chainCount <= 0) return;
+    playStats.chainFireCount++;
+    playStats.totalChainCount += chainCount;
+    playStats.maxChainCount = Math.max(playStats.maxChainCount, chainCount);
 }
 
 function shuffleArray(arr) {
@@ -453,6 +479,17 @@ function updateUI() {
     const chainElement = document.getElementById('chain-count');
     if (scoreElement) scoreElement.textContent = score;
     if (chainElement) chainElement.textContent = chainCount;
+    const averageChainElement = document.getElementById('average-chain-stat');
+    const maxChainElement = document.getElementById('max-chain-stat');
+    const chainFireElement = document.getElementById('chain-fire-stat');
+    const moveCountElement = document.getElementById('move-count-stat');
+    const averageChain = playStats.chainFireCount > 0
+        ? playStats.totalChainCount / playStats.chainFireCount
+        : 0;
+    if (averageChainElement) averageChainElement.textContent = averageChain.toFixed(1);
+    if (maxChainElement) maxChainElement.textContent = playStats.maxChainCount;
+    if (chainFireElement) chainFireElement.textContent = playStats.chainFireCount;
+    if (moveCountElement) moveCountElement.textContent = playStats.moveCount;
     updateOjamaUI();
     updateHistoryButtons();
 }
@@ -560,6 +597,7 @@ function saveState(clearRedoStack = true) {
         queueIndex: queueIndex,
         score: score,
         chainCount: chainCount,
+        playStats: copyPlayStats(playStats),
         pendingOjama: pendingOjama,
         nuisancePointBuffer: nuisancePointBuffer,
         gameState: gameState,
@@ -592,6 +630,7 @@ function restoreState(state) {
     queueIndex = state.queueIndex;
     score = state.score;
     chainCount = state.chainCount;
+    playStats = state.playStats ? copyPlayStats(state.playStats) : createEmptyPlayStats();
     pendingOjama = state.pendingOjama || 0;
     nuisancePointBuffer = state.nuisancePointBuffer || 0;
     updateOjamaUI();
@@ -761,6 +800,7 @@ function initializeGame() {
 
     score = 0;
     chainCount = 0;
+    playStats = createEmptyPlayStats();
     pendingOjama = 0;
     chainAttackScoreBuffer = 0;
     nuisancePointBuffer = 0;
@@ -1056,6 +1096,7 @@ function lockPuyo() {
     });
 
     currentPuyo = null;
+    playStats.moveCount++;
 
     gravity();
 
@@ -1171,6 +1212,8 @@ async function runChain() {
     const groups = findConnectedPuyos();
 
     if (groups.length === 0) {
+        recordCompletedChain();
+        updateUI();
         if (checkBoardEmpty()) {
             score += ALL_CLEAR_SCORE_BONUS;
             chainAttackScoreBuffer += ALL_CLEAR_SCORE_BONUS;
@@ -1235,6 +1278,8 @@ async function runChain() {
 
     const nextGroups = findConnectedPuyos();
     if (nextGroups.length === 0) {
+        recordCompletedChain();
+        updateUI();
         gameState = 'playing';
 
         flushChainOjamaBuffer();
